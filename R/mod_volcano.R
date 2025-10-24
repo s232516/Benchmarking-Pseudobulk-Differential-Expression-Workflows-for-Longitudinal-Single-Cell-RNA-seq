@@ -7,40 +7,183 @@
 #' @noRd
 #'
 #' @importFrom shiny NS tagList
-
-library(shiny)
-library(ggplot2)
-library(plotly)
-
-
 mod_volcano_ui <- function(id) {
-  ns <- NS(id)
-  tagList(
-    sliderInput(ns('pCut'), 'Adjusted p-value cutoff', min = 0, max = 0.1, value = 0.05, step = 0.005),
-    numericInput(ns('lfcCut'), 'Log2 fold-change cutoff', value = 1, step = 0.1),
-    plotlyOutput(ns('volcanoPlot'), height = '600px')
+  ns <- shiny::NS(id)
+  bslib::card(
+    bslib::layout_sidebar(
+      fillable = TRUE,
+      sidebar = bslib::accordion(
+        id = ns("tx_accordion"),
+        bslib::accordion_panel(
+          title = "Analysis",
+          icon = shiny::icon("bars"),
+          id = ns("tx_analysis"),
+          shiny::selectInput(
+            inputId = ns("data"),
+            label = bslib::tooltip(
+              trigger = shiny::tagList(
+                "Select dataset",
+                shiny::icon("circle-info")
+              ),
+              "Select which is the dataset that you want to use for
+              dimensionality reduction."
+            ),
+            choices = NULL
+          ),
+          shiny::selectInput(
+            inputId = ns("de_method"),
+            label = bslib::tooltip(
+              trigger = shiny::tagList(
+                "Select dataset",
+                shiny::icon("circle-info")
+              ),
+              "Select which is the dataset that you want to use for
+              dimensionality reduction."
+            ),
+            choices = NULL
+          ),
+          shiny::radioButtons(
+            inputId = ns("pvalue"),
+            label = bslib::tooltip(
+              trigger = shiny::tagList(
+                "P-value",
+                shiny::icon("circle-info")
+              ),
+              "Select the p-value to use in the analysis."
+            ),
+            choices = c(0.1, 0.05, 0.01, 0.005, 0.001),
+            selected = 0.05
+          ),
+          shiny::sliderInput(
+            inputId = ns("logfc"),
+            label = bslib::tooltip(
+              trigger = shiny::tagList(
+                "Log2 Fold Change",
+                shiny::icon("circle-info")
+              ),
+              "Select the log2 fold change to use in the analysis."
+            ),
+            min = 0,
+            max = 4,
+            value = 0
+          )
+        )
+      ),
+      bslib::layout_columns(
+        col_widths = 12,
+        bslib::card(
+          title = "Treatment Effect",
+          icon = shiny::icon("volcano"),
+          id = ns("volcano_card"),
+          # Create a header for downloading the plot
+          bslib::card_header(
+            shiny::downloadButton(
+              outputId = ns("download_plot"),
+              class = "btn-primary"
+            )
+          ),
+          shiny::plotOutput(ns("volcano_plot"), height = "600px")
+        )
+      )
+    )
   )
 }
-
 #' mod_volcano Server Functions
 #'
 #' @noRd
-mod_volcano_server <- function(input, output, session, shared) {
+mod_volcano_server <- function(input, output, session, data) {
   ns <- session$ns
 
-  volcano_data <- reactive({
-    df <- switch(input$de_method,
-                 'MAST' = shared$mast,
-                 'DESeq2' = shared$deseq)
-    req(df)
-    df %>% mutate(significant = padj <= input$pCut & abs(log2FoldChange) >= input$lfcCut)
+  observe({
+    shiny::updateSelectInput(
+      session,
+      "de_method",
+      choices = unique(data$method),
+      selected = unique(data$method)[1]
+    )
   })
 
-  output$volcanoPlot <- plotly::renderPlotly({
-    df <- volcano_data()
-    p <- volcano_plot(df, x = 'log2FoldChange', y = 'padj', labels = 'gene',
-                      hline = input$pCut, vline = input$lfcCut)
-    ggplotly(p, tooltip = 'text')
+  observe({
+    shiny::updateSelectInput(
+      session,
+      "data",
+      choices = unique(data$analysis),
+      selected = unique(data$analysis)[1]
+    )
+  })
+
+
+  shiny::updateSliderInput(
+    session,
+    "logfc",
+    min = 0,
+    max = round(max(abs(data$log2FoldChange),
+      na.rm = TRUE
+    )),
+    value = 0,
+    step = 0.01
+  )
+
+  volcano_data <- reactive({
+    df <- data |>
+      dplyr::filter(method == input$de_method) |>
+      dplyr::filter(analysis == input$data) |>
+      dplyr::mutate(neg_log10_pvalue = -log10(.data$pvalue)) |>
+      dplyr::arrange(.data$pvalue) |>
+      dplyr::mutate(pvalue_adj = dplyr::case_when(
+        (.data$padj <= as.numeric(input$pvalue)) ~ .data$pvalue,
+        TRUE ~ 0
+      )) |>
+      dplyr::mutate(significance = dplyr::case_when(
+        (.data$padj <= as.numeric(input$pvalue)) & (.data$log2FoldChange >
+                                                      input$logfc)
+        ~ "Upregulated",
+        (.data$padj <= as.numeric(input$pvalue)) & (.data$log2FoldChange <
+                                                      -input$logfc)
+        ~ "Downregulated",
+        TRUE ~ "Not significant"
+      ))
+  })
+
+  output$volcano_plot <- shiny::renderPlot({
+    req(volcano_data())
+    df <- as.data.frame(volcano_data())
+    max_es <- ceiling(max(abs(df$log2FoldChange),
+      na.rm = TRUE
+    ))
+    max_pvalue <- max(df$pvalue_adj)
+    print(max_pvalue)
+    y_thres <- NULL
+    if (max_pvalue > 0) {
+      y_thres <- max_pvalue
+    }
+
+    x_lims <- c(-max_es, max_es)
+
+
+    color_order <- c(
+      "Upregulated" = "#b2182b", "Downregulated" = "#2166ac",
+      "Not significant" = "#c0c0c0"
+    )
+
+    volcano_plot(
+      data = df,
+      x = "log2FoldChange",
+      y = "pvalue",
+      color_col = "significance",
+      colors = color_order,
+      labels = "gene",
+      y_axis_title = "P-value",
+      x_axis_title = "Effect Size",
+      plot_title = paste("Volcano Plot -", input$de_method),
+      x_lims = x_lims,
+      hline = y_thres,
+      vline = input$logfc,
+      label_size = 5
+    ) + ggplot2::theme(
+      aspect.ratio = 1,
+      text = ggplot2::element_text(size = 18)
+    )
   })
 
   output$volcanoTable <- DT::renderDT({
@@ -48,11 +191,28 @@ mod_volcano_server <- function(input, output, session, shared) {
     datatable(df, options = list(pageLength = 10))
   })
 
-  output$download_table <- downloadHandler(
-    filename = function() paste0(input$de_method, '_volcano_table.csv'),
+  output$download_plot <- shiny::downloadHandler(
+    filename = function() {
+      paste("volcano_plot", ".png", sep = "")
+    },
     content = function(file) {
-      df <- volcano_data()
-      write.csv(df, file, row.names = FALSE)
+      df <- as.data.frame(volcano_data())
+
+      color_order <- c(
+        "Upregulated" = "#b2182b", "Downregulated" = "#2166ac",
+        "Not significant" = "#c0c0c0"
+      )
+
+      volcano_plot(
+        data = df, x = "log2FoldChange", y = "pvalue",
+        color_col = "significance", colors = color_order,
+        labels = "gene", y_axis_title = "P-value",
+        x_axis_title = "Effect Size", hline = -log10(input$pvalue),
+        vline = input$logfc
+      ) + ggplot2::theme(
+        aspect.ratio = 1,
+        text = ggplot2::element_text(size = 18)
+      )
     }
   )
 }

@@ -2,20 +2,32 @@ Package: MsC
 Title: An Amazing Shiny App
 Version: 0.0.0.9000
 Authors@R: 
-    person(given = "firstname",
-           family = "lastname",
-           role = c("aut", "cre"),
-           email = "your@email.com")
+    person(
+        given = "Nerea",
+        family = "Gondra Zarain",
+        role = c("aut", "cre"),
+        email = "s232516@dtu.dk"
+    )
 Description: What the package does (one paragraph).
-License: What license is it under?
+License: MIT + file LICENSE
 Imports: 
     config,
     golem,
     pkgload,
-    shiny
+    shiny,
+    splatter,
+    scater,
+    stats,
+    MAST,
+    DESeq2,
+    SummarizedExperiment,
+    data.table,
+    plotly,
+    ggplot2
 Encoding: UTF-8
 LazyData: true
 RoxygenNote: 7.3.3
 Suggests: 
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
+

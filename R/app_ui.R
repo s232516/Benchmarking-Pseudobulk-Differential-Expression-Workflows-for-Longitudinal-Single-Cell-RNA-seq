@@ -9,10 +9,10 @@ app_ui <- function(request) {
     title = 'Single Cell Methods',
     id = "sc",
     bg = "#001965",
-    bslib::nav_panel('Overview', mod_overview_ui('overview_1')),
-    bslib::nav_panel('PCA', mod_pca_ui('pca_1')),
-    bslib::nav_panel('UMAP', mod_umap_ui('umap_1')),
-    bslib::nav_panel('Volcano', mod_volcano_ui('volcano_1'))
+    bslib::nav_panel('Overview', mod_overview_ui('overview')),
+    bslib::nav_panel('DR Plots', mod_dr_ui('dim_red')),
+    bslib::nav_panel('Volcano Plots', mod_volcano_ui('volcano')),
+    bslib::nav_panel('Error Bars', mod_errorbars_ui('error_bars'))
   )
 }
 

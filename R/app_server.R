@@ -6,27 +6,18 @@
 #' @noRd
 app_server <- function(input, output, session) {
   # load fixed data
-  data_path <- file.path('data','simData.rda')
-  if (!file.exists(data_path)) stop('data/simData.rda not found. Run R/data_prep.R first.')
-  load(data_path) # provides sim.pop.cond, mast_res, deseq_res
 
+  board <- pins::board_local("nrgn-data")
 
-  # make a small data list for modules
-  shared <- reactiveValues(
-    sim = sim.pop.cond,
-    mast = mast_res,
-    deseq = deseq_res
+  # Read pinned data
+  sim_pop_cond <- pins::pin_read(board, "sim_pop_cond")
+  method_data  <- pins::pin_read(board, "method_data")
+
+  callModule(mod_overview_server, "overview", sim = sim_pop_cond)
+  callModule(mod_dr_server, "dim_red", data = sim_pop_cond)
+  callModule(mod_volcano_server, "volcano", data = method_data)
+  callModule(mod_errorbars_server, "error_bars",
+    data = method_data,
+    sim = sim_pop_cond
   )
-
-
-  callModule(mod_overview_server, 'overview_1', shared = shared)
-  callModule(mod_pca_server, 'pca_1', shared = shared, colorBy = reactive(input$colorBy))
-  callModule(mod_umap_server, 'umap_1', shared = shared, colorBy = reactive(input$colorBy))
-  callModule(mod_volcano_server, 'volcano_1', shared = shared)
 }
-
-
-# To run interactively without golem packaging
-# if (interactive()) {
-#   shiny::shinyApp(ui = app_ui, server = app_server)
-# }
