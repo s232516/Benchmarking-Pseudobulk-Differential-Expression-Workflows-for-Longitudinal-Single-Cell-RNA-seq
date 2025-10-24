@@ -5,14 +5,27 @@
 #' @import shiny
 #' @noRd
 app_ui <- function(request) {
-  bslib::page_navbar(
-    title = 'Single Cell Methods',
-    id = "sc",
-    bg = "#001965",
-    bslib::nav_panel('Overview', mod_overview_ui('overview')),
-    bslib::nav_panel('DR Plots', mod_dr_ui('dim_red')),
-    bslib::nav_panel('Volcano Plots', mod_volcano_ui('volcano')),
-    bslib::nav_panel('Error Bars', mod_errorbars_ui('error_bars'))
+  tagList(
+    golem_add_external_resources(),
+    bslib::page_navbar(
+      title = 'Single Cell Methods',
+      id = "sc",
+      bg = "#001965",
+      inverse = "auto",
+      theme = bslib::bs_theme(
+        bg = "#FFFFFF",
+        fg = "#001965",
+        primary = "#99a3c1"
+      ) |>
+        bslib::bs_add_rules(
+          list()
+        ),
+      fillable = TRUE,
+      bslib::nav_panel('Overview', mod_overview_ui('overview')),
+      bslib::nav_panel('DR Plots', mod_dr_ui('dim_red')),
+      bslib::nav_panel('Volcano Plots', mod_volcano_ui('volcano')),
+      bslib::nav_panel('Error Bars', mod_errorbars_ui('error_bars'))
+    )
   )
 }
 
@@ -31,12 +44,7 @@ golem_add_external_resources <- function() {
   )
 
   tags$head(
-    favicon(),
-    bundle_resources(
-      path = app_sys("app/www"),
-      app_title = "MsC"
-    )
-    # Add here other external resources
-    # for example, you can add shinyalert::useShinyalert()
+    # Link your CSS
+    tags$link(rel = "stylesheet", type = "text/css", href = "www/custom.css")
   )
 }

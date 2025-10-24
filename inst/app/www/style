@@ -1,0 +1,138 @@
+.custom-card {
+
+  display: flex;
+  align-items: center;
+  background-color: #ffffff;
+  border: none;
+  padding: 20px;
+  border-radius: 10px;
+  box-shadow: none;
+  margin-bottom: 20px;
+  width: 100%;
+
+}
+
+
+
+.custom-card img {
+  margin-right: 20px;
+  max-width: 100px;
+  height: auto;
+}
+
+.card-content {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+}
+
+.card-text {
+  font-size: 12px;
+}
+
+.clickable-button-dark,
+.clickable-button-light.active {
+  background-color: #001965 !important;
+  color: #FFFFFF !important;
+  cursor: pointer !important;
+}
+
+.clickable-button-dark:hover,
+.clickable-button-light.active {
+  background-color: #FFFFFF !important;
+  color: #001965 !important;
+  border-color: #001965 !important;
+}
+
+.clickable-button-light,
+.clickable-button-light.active {
+  background-color: #FFFFFF !important;
+  color: #001965 !important;
+  border-color: #001965 !important;
+}
+
+.clickable-button-light:hover,
+.clickable-button-light.active {
+    background-color: #001965 !important;
+    color: #FFFFFF !important;
+    cursor: pointer !important;
+    border-color: #001965 !important;
+}
+
+
+
+.non-clickable-button {
+  background-color: #e6e8f0;
+  color: #99a3c1;
+  cursor: default;
+  pointer-events: none;
+  border: none;
+  hover-events: none;
+}
+
+
+
+.modal-footer .btn {
+  background-color: #001965;
+  color: #FFFFFF;
+  border: none;
+}
+
+
+
+.modal-footer .btn:hover {
+  background-color: #FFFFFF;
+  color: #001965;
+  border: 1px solid #001965;
+}
+
+
+
+.selectize-dropdown .option {
+  background-color: #FFFFFF !important;
+  color: #001965 !important;
+}
+
+
+
+.selectize-dropdown .option.active {
+  background-color: #001965 !important;
+  color: #FFFFFF !important;
+}
+
+
+
+.irs--shiny .irs-bar {
+  background-color: #001965  !important;
+  border-color: #001965 !important;
+}
+
+
+
+.irs--shiny .irs-handle {
+  background-color: #001965 !important;
+  border-color: #001965 !important;
+}
+
+
+
+.irs--shiny .irs-handle.state_hover,
+.irs--shiny .irs-handle:hover {
+  background-color: #001965 !important;
+  border-color: #001965 !important;
+}
+
+
+
+.irs-single {
+  background-color: #001965  !important;
+  color: white !important;
+}
+
+.irs-from,
+.irs-to,
+.irs-min,
+.irs-max {
+  background-color: #e6e8f0 !important;
+  color: #99a3c1 !important;
+}

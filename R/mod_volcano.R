@@ -72,17 +72,30 @@ mod_volcano_ui <- function(id) {
       bslib::layout_columns(
         col_widths = 12,
         bslib::card(
-          title = "Treatment Effect",
-          icon = shiny::icon("volcano"),
-          id = ns("volcano_card"),
+          fill = FALSE,
+          fill_screen = TRUE,
           # Create a header for downloading the plot
           bslib::card_header(
+            div(
+            style = "display: flex; justify-content: space-between;
+            align-items: center;",
+            "Volcano Plot",
             shiny::downloadButton(
+              class = "clickable-button-light",
               outputId = ns("download_plot"),
-              class = "btn-primary"
+              label = ""
             )
-          ),
-          shiny::plotOutput(ns("volcano_plot"), height = "600px")
+          )),
+          bslib::card_body(
+            style = "display = flex; justify-content: space-between;
+            align-items: center;",
+            div(
+              style = "width: 800px; height: 550px; overflow: auto;",
+              shiny::plotOutput(ns("volcano_plot"), height = "550px",
+                                width = "800px"
+              )
+            )
+          )
         )
       )
     )
@@ -123,6 +136,7 @@ mod_volcano_server <- function(input, output, session, data) {
     value = 0,
     step = 0.01
   )
+  # Bonferroni Correction
 
   volcano_data <- reactive({
     df <- data |>
@@ -152,7 +166,6 @@ mod_volcano_server <- function(input, output, session, data) {
       na.rm = TRUE
     ))
     max_pvalue <- max(df$pvalue_adj)
-    print(max_pvalue)
     y_thres <- NULL
     if (max_pvalue > 0) {
       y_thres <- max_pvalue

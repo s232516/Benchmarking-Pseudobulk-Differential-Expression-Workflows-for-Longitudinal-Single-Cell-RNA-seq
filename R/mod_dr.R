@@ -32,18 +32,58 @@ mod_dr_ui <- function(id) {
         ),
       bslib::layout_columns(
         col_widths = 12,
-        bslib::navset_card_tab(
-          id = ns("dr_tabs"),
-          bslib::nav_panel(
-            title = "PCA",
-            id = ns("pca"),
-            shiny::plotOutput(ns("pca_plot"), height = "600px")
-          ),
-          bslib::nav_panel(
-            title = "UMAP",
-            icon = shiny::icon("layer-group"),
-            id = ns("umap"),
-            shiny::plotOutput(ns("umap_plot"), height = "600px")
+
+        bslib::layout_columns(
+          col_widths = 12,
+          bslib::navset_card_tab(
+            bslib::nav_panel(
+              title = "PCA",
+              icon = shiny::icon("chart-simple"),
+                bslib::card_header(
+                  div(
+                    style = "display: flex; justify-content: flex-end;
+            align-items: center;",
+                    shiny::downloadButton(
+                      class = "clickable-button-light",
+                      outputId = ns("pca_download_plot"),
+                      label = ""
+                    )
+                  )),
+                bslib::card_body(
+                  style = "display = flex; justify-content: space-between;
+            align-items: center;",
+                  div(
+                    style = "width: 800px; height: 550px; overflow: auto;",
+                    shiny::plotOutput(ns("pca_plot"), height = "550px",
+                                      width = "800px"
+                    )
+                  )
+                )
+            ),
+            bslib::nav_panel(
+              title = "UMAP",
+              icon = shiny::icon("layer-group"),
+              bslib::card_header(
+                div(
+                  style = "display: flex; justify-content: flex-end;
+            align-items: center;",
+                  shiny::downloadButton(
+                    class = "clickable-button-light",
+                    outputId = ns("umap_download_plot"),
+                    label = ""
+                  )
+                )),
+              bslib::card_body(
+                style = "display = flex; justify-content: space-between;
+            align-items: center;",
+                div(
+                  style = "width: 800px; height: 550px; overflow: auto;",
+                  shiny::plotOutput(ns("umap_plot"), height = "550px",
+                                    width = "800px"
+                  )
+                )
+              )
+            )
           )
         )
       )
@@ -66,7 +106,8 @@ mod_dr_server <- function(input, output, session, data) {
     ) +
       ggplot2::theme_bw() +
       ggplot2::theme(
-        text = ggplot2::element_text(size = 12)
+        aspect.ratio = 1,
+        text = ggplot2::element_text(size = 18)
       ) +
       ggplot2::labs(title = "PCA Plot")
   })
@@ -81,7 +122,8 @@ mod_dr_server <- function(input, output, session, data) {
     ) +
       ggplot2::theme_bw() +
       ggplot2::theme(
-        text = ggplot2::element_text(size = 12)
+        aspect.ratio = 1,
+        text = ggplot2::element_text(size = 18)
       ) +
       ggplot2::labs(title = "UMAP Plot")
   })
