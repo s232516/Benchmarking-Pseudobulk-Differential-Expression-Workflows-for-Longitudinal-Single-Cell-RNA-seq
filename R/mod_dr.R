@@ -30,8 +30,6 @@ mod_dr_ui <- function(id) {
             )
           )
         ),
-      bslib::layout_columns(
-        col_widths = 12,
 
         bslib::layout_columns(
           col_widths = 12,
@@ -53,7 +51,7 @@ mod_dr_ui <- function(id) {
                   style = "display = flex; justify-content: space-between;
             align-items: center;",
                   div(
-                    style = "width: 800px; height: 550px; overflow: auto;",
+                    style = "width: 800px; height:800px; overflow: auto;",
                     shiny::plotOutput(ns("pca_plot"), height = "550px",
                                       width = "800px"
                     )
@@ -88,7 +86,7 @@ mod_dr_ui <- function(id) {
         )
       )
     )
-  )
+
 }
 
 #' mod_dr Server Functions

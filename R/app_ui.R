@@ -7,6 +7,7 @@
 app_ui <- function(request) {
   tagList(
     golem_add_external_resources(),
+    shinyjs::useShinyjs(),
     bslib::page_navbar(
       title = 'Single Cell Methods',
       id = "sc",

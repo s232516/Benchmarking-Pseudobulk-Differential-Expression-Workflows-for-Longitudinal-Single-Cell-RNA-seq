@@ -9,9 +9,14 @@
 #' @importFrom shiny NS tagList
 mod_volcano_ui <- function(id) {
   ns <- shiny::NS(id)
-  bslib::card(
+
+  bslib::page_fillable(
     bslib::layout_sidebar(
       fillable = TRUE,
+      width = 280,
+      open = "always",
+
+      # Sidebar controls
       sidebar = bslib::accordion(
         id = ns("tx_accordion"),
         bslib::accordion_panel(
@@ -20,79 +25,66 @@ mod_volcano_ui <- function(id) {
           id = ns("tx_analysis"),
           shiny::selectInput(
             inputId = ns("data"),
-            label = bslib::tooltip(
-              trigger = shiny::tagList(
-                "Select dataset",
-                shiny::icon("circle-info")
-              ),
-              "Select which is the dataset that you want to use for
-              dimensionality reduction."
-            ),
+            label = "Select dataset",
             choices = NULL
           ),
           shiny::selectInput(
             inputId = ns("de_method"),
-            label = bslib::tooltip(
-              trigger = shiny::tagList(
-                "Select dataset",
-                shiny::icon("circle-info")
-              ),
-              "Select which is the dataset that you want to use for
-              dimensionality reduction."
-            ),
+            label = "DE Method",
             choices = NULL
           ),
           shiny::radioButtons(
             inputId = ns("pvalue"),
-            label = bslib::tooltip(
-              trigger = shiny::tagList(
-                "P-value",
-                shiny::icon("circle-info")
-              ),
-              "Select the p-value to use in the analysis."
-            ),
+            label = "P-value",
             choices = c(0.1, 0.05, 0.01, 0.005, 0.001),
             selected = 0.05
           ),
           shiny::sliderInput(
             inputId = ns("logfc"),
-            label = bslib::tooltip(
-              trigger = shiny::tagList(
-                "Log2 Fold Change",
-                shiny::icon("circle-info")
-              ),
-              "Select the log2 fold change to use in the analysis."
-            ),
+            label = "Log2 Fold Change",
             min = 0,
             max = 4,
             value = 0
           )
         )
       ),
+
+      # MAIN AREA: scrollable container with plot (fixed height) + table below
       bslib::layout_columns(
         col_widths = 12,
-        bslib::card(
-          fill = FALSE,
-          fill_screen = TRUE,
-          # Create a header for downloading the plot
-          bslib::card_header(
-            div(
-            style = "display: flex; justify-content: space-between;
-            align-items: center;",
-            "Volcano Plot",
-            shiny::downloadButton(
-              class = "clickable-button-light",
-              outputId = ns("download_plot"),
-              label = ""
+        div(
+          style = "overflow-y: auto; padding-right: 10px; padding-left: 10px;",
+          # volcano plot card
+          bslib::card(
+            style = "margin-bottom: 1rem;",
+            bslib::card_header(
+              div(
+                style = "display: flex; justify-content: space-between;
+                align-items: center;",
+                "Volcano Plot",
+                shiny::downloadButton(
+                  class = "clickable-button-light",
+                  outputId = ns("download_plot"),
+                  label = ""
+                )
+              )
+            ),
+            bslib::card_body(
+              div(
+                style = "width: 100%; height: 550px; overflow: hidden;",
+                shiny::plotOutput(ns("volcano_plot"), height = "550px",
+                                  width = "100%")
+              )
             )
-          )),
-          bslib::card_body(
-            style = "display = flex; justify-content: space-between;
-            align-items: center;",
-            div(
-              style = "width: 800px; height: 550px; overflow: auto;",
-              shiny::plotOutput(ns("volcano_plot"), height = "550px",
-                                width = "800px"
+          ),
+
+          # table card below (scrollable to it)
+          bslib::card(
+            bslib::card_header("Volcano Plot Data Table"),
+            bslib::card_body(
+              div(
+                style = "width: 100%",
+                DT::DTOutput(ns("volcano_table"))
               )
             )
           )
@@ -101,6 +93,8 @@ mod_volcano_ui <- function(id) {
     )
   )
 }
+
+
 #' mod_volcano Server Functions
 #'
 #' @noRd
@@ -150,10 +144,10 @@ mod_volcano_server <- function(input, output, session, data) {
       )) |>
       dplyr::mutate(significance = dplyr::case_when(
         (.data$padj <= as.numeric(input$pvalue)) & (.data$log2FoldChange >
-                                                      input$logfc)
+          input$logfc)
         ~ "Upregulated",
         (.data$padj <= as.numeric(input$pvalue)) & (.data$log2FoldChange <
-                                                      -input$logfc)
+          -input$logfc)
         ~ "Downregulated",
         TRUE ~ "Not significant"
       ))
@@ -199,10 +193,20 @@ mod_volcano_server <- function(input, output, session, data) {
     )
   })
 
-  output$volcanoTable <- DT::renderDT({
+  output$volcano_table <- DT::renderDT({
     df <- volcano_data()
-    datatable(df, options = list(pageLength = 10))
+
+    DT::datatable(
+      df,
+      options = list(
+        pageLength = 10,
+        scrollX = TRUE,
+        searching = TRUE,
+        ordering = TRUE
+        )
+    )
   })
+
 
   output$download_plot <- shiny::downloadHandler(
     filename = function() {
