@@ -25,12 +25,24 @@ mod_volcano_ui <- function(id) {
           id = ns("tx_analysis"),
           shiny::selectInput(
             inputId = ns("data"),
-            label = "Select dataset",
+            label = bslib::tooltip(
+              trigger = shiny::tagList("Select dataset",
+                                       shiny::icon("circle-info")),
+              "Select which is the dataset that you want to use for
+                dimensionality reduction."
+            ),
             choices = NULL
           ),
           shiny::selectInput(
             inputId = ns("de_method"),
-            label = "DE Method",
+            label = bslib::tooltip(
+              trigger = shiny::tagList(
+                "Select dataset",
+                shiny::icon("circle-info")
+              ),
+              "Select which is the dataset that you want to use for
+              dimensionality reduction."
+            ),
             choices = NULL
           ),
           shiny::radioButtons(
@@ -101,12 +113,15 @@ mod_volcano_ui <- function(id) {
 mod_volcano_server <- function(input, output, session, data) {
   ns <- session$ns
 
-  observe({
+  observeEvent(input$data, {
+    df <- data |>
+      dplyr::filter(analysis == input$data)
+    choices <- unique(df$method)
     shiny::updateSelectInput(
       session,
       "de_method",
-      choices = unique(data$method),
-      selected = unique(data$method)[1]
+      choices = choices,
+      selected = choices[1]
     )
   })
 
@@ -133,6 +148,7 @@ mod_volcano_server <- function(input, output, session, data) {
   # Bonferroni Correction
 
   volcano_data <- reactive({
+    req( input$de_method, input$data)
     df <- data |>
       dplyr::filter(method == input$de_method) |>
       dplyr::filter(analysis == input$data) |>
@@ -155,6 +171,7 @@ mod_volcano_server <- function(input, output, session, data) {
 
   output$volcano_plot <- shiny::renderPlot({
     req(volcano_data())
+    if(nrow(volcano_data()) != 0){
     df <- as.data.frame(volcano_data())
     max_es <- ceiling(max(abs(df$log2FoldChange),
       na.rm = TRUE
@@ -191,6 +208,7 @@ mod_volcano_server <- function(input, output, session, data) {
       aspect.ratio = 1,
       text = ggplot2::element_text(size = 18)
     )
+    }
   })
 
   output$volcano_table <- DT::renderDT({

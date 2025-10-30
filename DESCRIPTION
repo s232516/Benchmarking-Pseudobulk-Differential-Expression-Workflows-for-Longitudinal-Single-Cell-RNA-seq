@@ -21,10 +21,13 @@ Imports:
     MAST,
     DESeq2,
     SummarizedExperiment,
+    SingleCellExperiment,
+    dplyr,
     data.table,
     plotly,
     ggplot2,
-    shinyjs
+    shinyjs,
+    rescueSim
 Encoding: UTF-8
 LazyData: true
 RoxygenNote: 7.3.3

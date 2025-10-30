@@ -82,12 +82,15 @@ mod_errorbars_ui <- function(id) {
 #' @noRd
 mod_errorbars_server <- function(input, output, session, data, sim) {
   ns <- session$ns
-  observe({
+  observeEvent(input$data, {
+    df <- data |>
+      dplyr::filter(analysis == input$data)
+    choices <- unique(df$method)
     shiny::updateSelectInput(
       session,
       "de_method",
-      choices = unique(data$method),
-      selected = unique(data$method)[1]
+      choices = choices,
+      selected = choices[1]
     )
   })
 

@@ -93,13 +93,25 @@ mod_dr_ui <- function(id) {
 #'
 #' @noRd
 mod_dr_server <- function(input, output, session, data) {
+  observe({
+    shiny::updateSelectInput(
+      session,
+      "data",
+      choices = names(data),
+      selected = names(data)[1]
+    )
+  })
+
+  dr_df <- reactive({
+    data[[input$data]]
+  })
 
   output$pca_plot <- shiny::renderPlot({
+    df <- dr_df()
 
     scater::plotPCA(
-      data,
-      colour_by = "Sample",
-      shape_by = "Condition",
+      df,
+      colour_by = "Condition",
       point_size = 3
     ) +
       ggplot2::theme_bw() +
@@ -111,10 +123,11 @@ mod_dr_server <- function(input, output, session, data) {
   })
 
   output$umap_plot <- shiny::renderPlot({
+    df <- dr_df()
 
     # Step 4: plot UMAP
     scater::plotUMAP(
-      data,
+      df,
       colour_by = "Condition",
       point_size = 3
     ) +
