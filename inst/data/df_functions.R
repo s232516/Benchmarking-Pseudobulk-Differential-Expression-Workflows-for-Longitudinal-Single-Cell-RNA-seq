@@ -93,11 +93,19 @@ make_rescuesim_params <- function(RecAM_sce,
     nonDEGs = NULL,
     cellParamsByCondition = FALSE
   )
+
+  ## For the 2nd time point, simulate +/- 1 log2FC in 20% of genes
+  group0_log2FC<-sample(c(-1, 0, 1),
+                       nrow(RecAM_sce),
+                       replace=T,
+                       prob = c(.1, .8, .1))
+  ## For final time point, multiply log2FC by 3 to get +/- 3 log2FC in 20% of genes
+  group1_log2FC <- 3*group0_log2FC
   p@nTimepoints <- nTimepoints
   p@twoGroupDesign <- twoGroupDesign
   p@nSubjsPerGroup <- nSubjsPerGroup
   p@propDE <- propDE
-  p@deLog2FC <- deLog2FC
+  p@deLog2FC <- list(time1_group0= group0_log2FC, time1_group1 = group1_log2FC)
   p
 }
 #### rescueSim data ------------------------------------------------------------
@@ -134,7 +142,12 @@ simulate_rescue <- function(params, seed = NULL) {
   SummarizedExperiment::colData(sim)$CellID <- factor(
     SummarizedExperiment::rownames(SummarizedExperiment::colData(sim))
   )
-  sim
+  ground_truth <- SummarizedExperiment::rowData(sim)
+  simulation <-  list(
+    sce = sim,
+    ground_truth = ground_truth)
+
+  simulation
 }
 
 ## Jan -------------------------------------------------------------------------
@@ -164,6 +177,7 @@ simulate_jan <- function(nSubjsPerGroup = 20,
   params <- splatter::setParam(params, "batchCells", nrow(design_metadata))
   params <- splatter::setParam(params, "group.prob", 1)
   params <- splatter::setParam(params, "de.prob", 0)
+  params <- splatter::setParam(params, "dropout.type", "experiment")
 
   sce <- splatter::splatSimulate(params, verbose = FALSE)
 
@@ -174,6 +188,7 @@ simulate_jan <- function(nSubjsPerGroup = 20,
   # Placebo and treatment effects
   placebo_genes <- 1:20
   treatment_genes <- 15:25
+  both_effects_genes <- intersect(placebo_genes, treatment_genes)
 
   for (gene_idx in 1:nGenes) {
     for (cell_idx in 1:nrow(design_metadata)) {
@@ -217,8 +232,18 @@ simulate_jan <- function(nSubjsPerGroup = 20,
 
   sim_jan <- scater::runPCA(sim_jan, ncomponents = 10)
   sim_jan <- scater::runUMAP(sim_jan, dimred = "PCA")
+  ground_truth <- data.frame(
+    Gene = paste0("Gene_", 1:nGenes),
+    PlaceboEffect = 1:nGenes %in% placebo_genes,
+    TreatmentEffect = 1:nGenes %in% treatment_genes,
+    BothEffects = 1:nGenes %in% both_effects_genes
+  )
 
-  sim_jan
+  simulation <-  list(
+    sce = sim_jan,
+    ground_truth = ground_truth)
+
+  simulation
 }
 
 
@@ -240,25 +265,6 @@ run_mast <- function(
   # Convert SCE to SingleCellAssay
   if (verbose) message("Converting SCE to SingleCellAssay...")
   sca <- MAST::SceToSingleCellAssay(sce, check_sanity = check_sanity)
-  ##
-  # Drop unused levels & enforce treatment contrasts
-  cd <- SummarizedExperiment::colData(sca)
-  cd$group <- droplevels(factor(cd$group))
-  c
-
-  # Sanity: do we have all cells for the interaction?
-  tab <- table(cd$group, cd$time)
-  print(tab)
-  if (any(tab == 0)) {
-    message("Missing group×time combination detected: ")
-    print(tab)
-    # Fallback: drop the interaction to avoid aliasing
-    # (or re-simulate / filter cells to restore a full 2×2)
-    # Example fallback:
-    # formula <- ~ group + time + (1 | sampleID)
-  }
-  ##
-
 
   # Basic filtering
   expr <- as.matrix(SummarizedExperiment::assay(sca))
@@ -285,8 +291,16 @@ run_mast <- function(
     keep_overall <- rowSums(detected_in_sample) >= min_samples
 
     # --- 2. require some expression in every group×time combo ---
-    combo <- interaction(cd$group, cd$time, drop = TRUE)
+    if (all(c("group", "time") %in% colnames(cd))) {
+      combo <- interaction(cd$group, cd$time, drop = TRUE)
+    } else if ("Condition" %in% colnames(cd)) {
+      combo <- cd$Condition
+    } else {
+      combo <- factor(rep("All", ncol(expr)))
+      message("No 'group' or 'time' columns found; using all cells as one combo.")
+    }
     combo_list <- split(seq_len(ncol(expr)), combo)
+
     detected_in_combo <- vapply(
       combo_list,
       function(idx) rowSums(expr[, idx, drop = FALSE] > 0) > 0,
@@ -621,11 +635,15 @@ pipeline_jan_and_methods <- function(nSubjsPerGroup = 20,
                                      run_mast_fe = TRUE,
                                      run_mast_re = TRUE,
                                      run_deseq = TRUE) {
-  sim_jan <- simulate_jan(
+  data <- simulate_jan(
     nSubjsPerGroup = nSubjsPerGroup,
     nCellsPerSubjectTimepoint = nCellsPerSubjectTimepoint,
     nGenes = nGenes
   )
+  sim_jan <- data$sce
+
+
+  ground_truth <- data$ground_truth
   jan_results <- run_methods(
     sce = sim_jan,
     sample_var = "SubjectID",
@@ -638,6 +656,8 @@ pipeline_jan_and_methods <- function(nSubjsPerGroup = 20,
     run_mast_re = run_mast_re,
     run_deseq = run_deseq
   )
+  jan_results$ground_truth <- ground_truth
+  jan_results
 }
 
 ## rescueSim pipeline with methods ---------------------------------------------
@@ -647,12 +667,15 @@ pipeline_rescue_and_methods <- function(RecAM_sce,
                                         run_mast_ran = TRUE,
                                         run_deseq = TRUE) {
   params <- make_rescuesim_params(RecAM_sce, nSubjsPerGroup = nSubjsPerGroup)
-  sim <- simulate_rescue(params)
+  data <- simulate_rescue(params)
+  sim <- data$sce
+  ground_truth <- data$ground_truth
+
   rescue_results <- run_methods(
     sce = sim,
     sample_var = "sampleID",
     design_formula_mast = ~ subjectID + group * time,
-    design_formula_mast_rand = ~ group * time + (1 | sampleID),
+    design_formula_mast_rand = ~  group * time + (1 | sampleID),
     design_formula_deseq = ~ group * time,
     lrt_term = "groupTreatment:timeEoT",
     ids_vars = c("subjectID", "group", "time"),
@@ -660,6 +683,8 @@ pipeline_rescue_and_methods <- function(RecAM_sce,
     run_mast_re = run_mast_ran,
     run_deseq = run_deseq
   )
+  rescue_results$ground_truth <- ground_truth
+  rescue_results
 }
 
 
@@ -680,6 +705,18 @@ resc_out <- pipeline_rescue_and_methods(RecAM_sce)
 
 
 # Pin data ---------------------------------------------------------------------
+splatpop_out$mast_fe$analysis <- "splatpop"
+splatpop_out$mast_re$analysis <- "splatpop"
+splatpop_out$deseq$analysis   <- "splatpop"
+
+resc_out$mast_fe$analysis <- "rescueSim"
+resc_out$mast_re$analysis <- "rescueSim"
+resc_out$deseq$analysis   <- "rescueSim"
+
+jan_out$mast_fe$analysis  <- "jan"
+jan_out$mast_re$analysis  <- "jan"
+jan_out$deseq$analysis    <- "jan"
+
 method_data <- rbind(
   splatpop_out$mast_fe, splatpop_out$mast_re, splatpop_out$deseq,
   resc_out$mast_fe, resc_out$mast_re, resc_out$deseq,
@@ -690,6 +727,12 @@ simulation <- c(
   "Treatment" = splatpop_out$simulation,
   "Treatment + Time (rescueSim)" = resc_out$simulation,
   "Treatment + Time (splatter)" = jan_out$simulation
+)
+
+ground_truth <- simulation <- c(
+  # "Treatment" = splatpop_out$simulation,
+  "Treatment + Time (rescueSim)" = resc_out$ground_truth,
+  "Treatment + Time (splatter)" = jan_out$ground_truth
 )
 
 board <- pins::board_local("nrgn-data")
@@ -706,4 +749,11 @@ pins::pin_write(method_data,
   type = "rds",
   board = board,
   versioned = FALSE
+)
+
+pins::pin_write(ground_truth,
+                name = "ground_truth",
+                type = "rds",
+                board = board,
+                versioned = FALSE
 )
