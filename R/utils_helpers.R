@@ -261,3 +261,4 @@ neglog_trans <- function(base = exp(1)) {
   )
 
 }
+
