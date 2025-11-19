@@ -65,7 +65,31 @@ simulate_splatpop <- function(n_samples = 20,
     levels = c("Condition1", "Condition2"),
     labels = c("Placebo", "Treatment")
   )
-  sim
+  ## extract ground truth
+  real_data <- SummarizedExperiment::rowData(sim)
+
+  cond1 <- real_data$ConditionDE.Condition1
+  cond2 <- real_data$ConditionDE.Condition2
+
+  # Some SplatPop runs store these as numeric; others as characters
+  cond1 <- as.numeric(cond1)
+  cond2 <- as.numeric(cond2)
+
+  true_logFC <- log2(cond2 / cond1)
+
+  ground_truth <- data.frame(
+    gene = SummarizedExperiment::rownames(sim),
+    trueDE = true_logFC != 0,
+    true_logFC = true_logFC,
+    source = "splatPop"
+  )
+  simulation <- list(
+    sce = sim,
+    ground_truth = ground_truth,
+    simulation = "splatPop"
+  )
+
+  simulation
 }
 
 ## TRT + time ------------------------------------------------------------------
@@ -102,6 +126,8 @@ make_rescuesim_params <- function(RecAM_sce,
   p@deLog2FC <- list(time1_group0 = group0_log2FC, time1_group1 = group1_log2FC)
   p
 }
+
+
 #### rescueSim data ------------------------------------------------------------
 simulate_rescue <- function(params) {
   set.seed(42)
@@ -123,6 +149,10 @@ simulate_rescue <- function(params) {
     levels = c("time0", "time1"),
     labels = c("Baseline", "EoT")
   )
+  cd <- SummarizedExperiment::colData(sim)
+  cd$group <- relevel(factor(cd$group), ref = "Placebo")
+  cd$time  <- relevel(factor(cd$time),  ref = "Baseline")
+  SummarizedExperiment::colData(sim) <- cd
   SummarizedExperiment::colData(sim)$Condition <- paste0(
     SummarizedExperiment::colData(sim)$group, "_",
     SummarizedExperiment::colData(sim)$time
@@ -136,7 +166,23 @@ simulate_rescue <- function(params) {
   SummarizedExperiment::colData(sim)$CellID <- factor(
     SummarizedExperiment::rownames(SummarizedExperiment::colData(sim))
   )
-  ground_truth <- SummarizedExperiment::rowData(sim)
+
+  # compute ground truth
+
+  g0 <- SummarizedExperiment::rowData(sim)$deLog2FC.time1_group0
+  g1 <- SummarizedExperiment::rowData(sim)$deLog2FC.time1_group1
+
+  true_logFC <- g1 - g0
+
+  ground_truth <- data.frame(
+    gene = rownames(sim),
+    true_logFC = true_logFC,
+    trueDE = true_logFC != 0,
+    placebo_effect = g0,
+    treatment_effect = g1,
+    simulation = "rescueSim"
+  )
+
   simulation <- list(
     sce = sim,
     ground_truth = ground_truth
@@ -217,24 +263,43 @@ simulate_jan <- function(nSubjsPerGroup = 20,
 
   # Factor columns for wrappers
   sce$CellID <- factor(sce$CellID)
-  sce$SubjectID <- factor(sce$Subject)
-  sce$SampleID <- factor(sce$Sample)
+  sce$subjectID <- factor(sce$Subject)
+  sce$sampleID <- factor(sce$Sample)
   sce$group <- factor(ifelse(sce$Treatment == 0, "Placebo", "Treatment"))
   sce$time <- factor(ifelse(sce$Time == 0, "Baseline", "EoT"))
   sce$Condition <- paste0(
     sce$group, "_", sce$time
   )
+  cd <- SummarizedExperiment::colData(sce)
+  cd$group <- relevel(factor(cd$group), ref = "Placebo")
+  cd$time  <- relevel(factor(cd$time),  ref = "Baseline")
+  SummarizedExperiment::colData(sce) <- cd
+
+
 
   sim_jan <- sce
 
   sim_jan <- scater::runPCA(sim_jan, ncomponents = 10)
   sim_jan <- scater::runUMAP(sim_jan, dimred = "PCA")
+  # ground truth
+
+  placebo_shift <- rep(0, nGenes)
+  treatment_shift <- rep(0, nGenes)
+
+  placebo_shift[placebo_genes] <- 1.0      # +1 at EoT for placebo genes
+  treatment_shift[treatment_genes] <- 1.5  # +1.5 at EoT for treatment genes
+
+  true_logFC <- (placebo_shift + treatment_shift) - placebo_shift
+
   ground_truth <- data.frame(
-    Gene = paste0("Gene_", 1:nGenes),
-    PlaceboEffect = 1:nGenes %in% placebo_genes,
-    TreatmentEffect = 1:nGenes %in% treatment_genes,
-    BothEffects = 1:nGenes %in% both_effects_genes
+    gene = paste0("Gene_", 1:nGenes),
+    true_logFC = true_logFC,
+    trueDE = true_logFC != 0,
+    placebo_effect = placebo_shift,
+    treatment_effect = placebo_shift + treatment_shift,
+    simulation = "janSim"
   )
+
 
   simulation <- list(
     sce = sim_jan,
@@ -249,37 +314,45 @@ simulate_jan <- function(nSubjsPerGroup = 20,
 ## SplatPop --------------------------------------------------------------------
 set.seed(42)
 params <- make_splatpop_params()
-splatpop_sim <- simulate_splatpop(
+data <- simulate_splatpop(
   n_samples = 20,
   n_snps = 1000,
   params = params
 )
+splatpo_sim <- data$sce
+splatpop_ground_truth <- data$ground_truth
+
+
 ## Jan -------------------------------------------------------------------------
 data <- simulate_jan(
-  nSubjsPerGroup = nSubjsPerGroup,
-  nCellsPerSubjectTimepoint = nCellsPerSubjectTimepoint,
-  nGenes = nGenes
+  nSubjsPerGroup = 20,
+  nCellsPerSubjectTimepoint = 100,
+  nGenes = 100
 )
 jan_sim <- data$sce
 jan_ground_truth <- data$ground_truth
+
+
 ## rescueSim -------------------------------------------------------------------
 data("RecAM_sce", package = "rescueSim")
 params <- make_rescuesim_params(RecAM_sce, nSubjsPerGroup = 5)
 data <- simulate_rescue(params)
 rescuesim_sim <- data$sce
 rescuesim_ground_truth <- data$ground_truth
+
+
 # Pin simulations --------------------------------------------------------------
 board <- pins::board_local("nrgn-data")
 simulation <- c(
-  "Treatment" = splatpop_sim,
-  "Treatment + Time (rescueSim)" = rescuesim_sim,
-  "Treatment + Time (splatter)" = jan_sim
+  "splatPop (Treatment)" = splatpop_sim,
+  "rescueSim (Treatment + Time)" = rescuesim_sim,
+  "splatter (Treatment + Time)" = jan_sim
 )
 
 ground_truth <- c(
-  # "Treatment" = splatpop_out$simulation,
-  "Treatment + Time (rescueSim)" = rescuesim_ground_truth,
-  "Treatment + Time (splatter)" = jan_ground_truth
+  "splatPop (Treatment)" = splatpop_ground_truth,
+  "rescueSim (Treatment + Time)" = rescuesim_ground_truth,
+  "splatter (Treatment + Time)" = jan_ground_truth
 )
 
 pins::pin_write(simulation,
