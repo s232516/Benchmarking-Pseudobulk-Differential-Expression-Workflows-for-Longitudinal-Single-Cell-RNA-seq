@@ -45,6 +45,18 @@ mod_volcano_ui <- function(id) {
             ),
             choices = NULL
           ),
+          shiny::selectInput(
+            inputId = ns("formula"),
+            label = bslib::tooltip(
+              trigger = shiny::tagList(
+                "Select formula",
+                shiny::icon("circle-info")
+              ),
+              "Select which is the formula that you want to use for
+              dimensionality reduction."
+            ),
+            choices = NULL
+          ),
           shiny::radioButtons(
             inputId = ns("pvalue"),
             label = "P-value",
@@ -134,6 +146,19 @@ mod_volcano_server <- function(input, output, session, data) {
     )
   })
 
+  observeEvent(c(input$data,input$de_method), {
+    df <- data |>
+      dplyr::filter(analysis == input$data,
+                    method == input$de_method)
+    choices <- unique(df$formula)
+    shiny::updateSelectInput(
+      session,
+      "formula",
+      choices = choices,
+      selected = choices[1]
+    )
+  })
+
 
   shiny::updateSliderInput(
     session,
@@ -152,6 +177,7 @@ mod_volcano_server <- function(input, output, session, data) {
     df <- data |>
       dplyr::filter(method == input$de_method) |>
       dplyr::filter(analysis == input$data) |>
+      dplyr::filter(formula == input$formula) |>
       dplyr::mutate(neg_log10_pvalue = -log10(.data$pvalue)) |>
       dplyr::arrange(.data$pvalue) |>
       dplyr::mutate(pvalue_adj = dplyr::case_when(
