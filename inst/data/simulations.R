@@ -344,16 +344,17 @@ rescuesim_ground_truth <- data$ground_truth
 # Pin simulations --------------------------------------------------------------
 board <- pins::board_local("nrgn-data")
 simulation <- c(
-  "splatPop (Treatment)" = splatpop_sim,
-  "rescueSim (Treatment + Time)" = rescuesim_sim,
-  "splatter (Treatment + Time)" = jan_sim
+  "splatpop" = splatpop_sim,
+  "rescueSim" = rescuesim_sim,
+  "jan" = jan_sim
 )
 
-ground_truth <- c(
-  "splatPop (Treatment)" = splatpop_ground_truth,
-  "rescueSim (Treatment + Time)" = rescuesim_ground_truth,
-  "splatter (Treatment + Time)" = jan_ground_truth
+ground_truth <- list(
+  "splatpop"   = splatpop_ground_truth,
+  "rescueSim"  = rescuesim_ground_truth,
+  "jan"        = jan_ground_truth
 )
+
 
 pins::pin_write(simulation,
   name = "simulations",
