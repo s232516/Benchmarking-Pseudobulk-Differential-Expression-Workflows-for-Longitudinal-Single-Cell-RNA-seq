@@ -170,7 +170,7 @@ run_mast <- function(
   # )
 
   fc <- dt |>
-    dplyr::filter(component == "logFC") |>
+    dplyr::filter(contrast == lrt, component == "logFC") |>
     dplyr::transmute(gene = primerid, log2FoldChange = coef, stat = z)
   pval <- dt |>
     dplyr::filter(contrast == lrt, component == "H") |>
@@ -482,9 +482,9 @@ board <- pins::board_local("nrgn-data")
 
 # Read pins with simulations
 simulation <- pins::pin_read(board, "simulations")
-sim_splatpop <- simulation$`splatPop (Treatment`
-sim_jan <- simulation$`splatter (Treatment + Time`
-sim_rescue <- simulation$`rescueSim (Treatment + Time`
+sim_splatpop <- simulation$splatpop
+sim_jan <- simulation$jan
+sim_rescue <- simulation$rescueSim
 
 
 ## SplatPop --------------------------------------------------------------------
@@ -506,9 +506,9 @@ jan_out3 <- pipeline_jan_and_methods(sce = sim_jan,
                                      run_mast_re = TRUE,
                                      run_deseq = FALSE,
                                      design_formula_mast_rand =
-                                       ~ subjectID + time + group:time +
-                                       (1|sampleID),
-                                     lrt_term = "timeEoT:groupTreatment")
+                                       ~ group*time +
+                                       (1|subjectID),
+                                     lrt_term = "groupTreatment:timeEoT")
 ##  rescueSim ------------------------------------------------------------------
 resc_out <- pipeline_rescue_and_methods(sce = sim_rescue)
 res_out2 <- pipeline_rescue_and_methods(sce = sim_rescue,
@@ -521,6 +521,14 @@ res_out2 <- pipeline_rescue_and_methods(sce = sim_rescue,
                                           (1|sampleID),
                                         lrt_term = "timeEoT:groupTreatment")
 
+res_out3 <- pipeline_rescue_and_methods(sce = sim_rescue,
+                                        run_mast = FALSE,
+                                        run_mast_ran = TRUE,
+                                        run_deseq = FALSE,
+                                        design_formula_mast_rand =
+                                          ~  group*time +
+                                          (1|subjectID),
+                                        lrt_term = "groupTreatment:timeEoT")
 
 
 
@@ -533,46 +541,54 @@ splatpop_out$deseq$analysis   <- "splatpop"
 resc_out$mast_fe$analysis <- "rescueSim"
 resc_out$mast_re$analysis <- "rescueSim"
 resc_out$deseq$analysis   <- "rescueSim"
-resc2_out$mast_re$analysis <- "rescueSim"
+res2_out$mast_re$analysis <- "rescueSim"
+res3_out$mast_re$analysis <- "rescueSim"
+
 
 jan_out$mast_fe$analysis  <- "jan"
 jan_out$mast_re$analysis  <- "jan"
 jan_out$deseq$analysis    <- "jan"
 jan_out2$mast_re$analysis  <- "jan"
-
-standardize_df <- function(df) {
-  required_cols <- c(
-    "gene", "log2FoldChange", "pvalue", "padj", "method", "formula", "analysis"
-  )
-
-  missing <- setdiff(required_cols, colnames(df))
-  for (col in missing) df[[col]] <- NA
-
-  # keep only required columns (and in order)
-  df <- df[, required_cols, drop = FALSE]
-  return(df)
-}
-
-splatpop_out$mast_fe  <- standardize_df(splatpop_out$mast_fe)
-splatpop_out$mast_re  <- standardize_df(splatpop_out$mast_re)
-splatpop_out$deseq    <- standardize_df(splatpop_out$deseq)
-
-resc_out$mast_fe      <- standardize_df(resc_out$mast_fe)
-resc_out$mast_re      <- standardize_df(resc_out$mast_re)
-resc_out$deseq        <- standardize_df(resc_out$deseq)
-
-jan_out$mast_fe       <- standardize_df(jan_out$mast_fe)
-jan_out$mast_re       <- standardize_df(jan_out$mast_re)
-jan_out2$mast_re       <- standardize_df(jan_ou2t$mast_re)
-jan_out$deseq         <- standardize_df(jan_out$deseq)
-
-
+jan_out3$mast_re$analysis  <- "jan"
+#
+# standardize_df <- function(df) {
+#   required_cols <- c(
+#     "gene", "log2FoldChange", "pvalue", "padj", "method", "formula", "analysis",
+#     "lfcSE", "stat"
+#   )
+#
+#   missing <- setdiff(required_cols, colnames(df))
+#   for (col in missing) df[[col]] <- NA
+#
+#   # keep only required columns (and in order)
+#   df <- df[, required_cols, drop = FALSE]
+#   return(df)
+# }
+#
+# splatpop_out$mast_fe  <- standardize_df(splatpop_out$mast_fe)
+# splatpop_out$mast_re  <- standardize_df(splatpop_out$mast_re)
+# splatpop_out$deseq    <- standardize_df(splatpop_out$deseq)
+#
+# resc_out$mast_fe      <- standardize_df(resc_out$mast_fe)
+# resc_out$mast_re      <- standardize_df(resc_out$mast_re)
+# resc_out$deseq        <- standardize_df(resc_out$deseq)
+# res_out2$mast_re      <- standardize_df(res_out2$mast_re)
+# res_out3$mast_re      <- standardize_df(res_out3$mast_re)
+#
+# jan_out$mast_fe       <- standardize_df(jan_out$mast_fe)
+# jan_out$mast_re       <- standardize_df(jan_out$mast_re)
+# jan_out2$mast_re       <- standardize_df(jan_ou2t$mast_re)
+# jan_out3$mast_re       <- standardize_df(jan_out3$mast_re)
+# jan_out$deseq         <- standardize_df(jan_out$deseq)
+#
+#
 
 method_data <- rbind(
   splatpop_out$mast_fe, splatpop_out$mast_re, splatpop_out$deseq,
   resc_out$mast_fe, resc_out$mast_re, resc_out$deseq,
+  res_out2$mast_re, res_out3$mast_re,
   jan_out$mast_fe, jan_out$mast_re, jan_out$deseq,
-  jan_out2$mast_re
+  jan_out2$mast_re, jan_out3$mast_re, fill = TRUE
 )
 
 board <- pins::board_local("nrgn-data")
