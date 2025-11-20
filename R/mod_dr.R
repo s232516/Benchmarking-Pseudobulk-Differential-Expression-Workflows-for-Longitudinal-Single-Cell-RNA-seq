@@ -107,6 +107,7 @@ mod_dr_server <- function(input, output, session, data) {
   })
 
   output$pca_plot <- shiny::renderPlot({
+    req(dr_df())
     df <- dr_df()
 
     scater::plotPCA(
@@ -123,6 +124,7 @@ mod_dr_server <- function(input, output, session, data) {
   })
 
   output$umap_plot <- shiny::renderPlot({
+    req(dr_df())
     df <- dr_df()
 
     # Step 4: plot UMAP
