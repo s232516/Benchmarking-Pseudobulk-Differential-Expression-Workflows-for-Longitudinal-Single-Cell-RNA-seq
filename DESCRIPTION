@@ -27,7 +27,8 @@ Imports:
     plotly,
     ggplot2,
     shinyjs,
-    rescueSim
+    rescueSim,
+    precrec
 Encoding: UTF-8
 LazyData: true
 RoxygenNote: 7.3.3

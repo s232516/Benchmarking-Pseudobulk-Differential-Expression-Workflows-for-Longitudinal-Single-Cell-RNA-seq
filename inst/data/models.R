@@ -109,7 +109,7 @@ run_mast <- function(
       deparse(formula)
     )
   }
-  zlmfit <<- tryCatch(
+  zlmfit <- tryCatch(
     MAST::zlm(
       formula,
       sca,
@@ -142,13 +142,36 @@ run_mast <- function(
     message("Summary did not include 'contrast' column — check your LRT name.")
     return(NULL)
   }
-  View(dt |>
-          dplyr::filter(contrast == lrt, component == "logFC"))
+
+  # # Extract raw continuous coefficients
+  # coefC <- zlmfit@coefC  # matrix genes × coefficients
+  #
+  # # Make sure your contrast name matches a coefficient column
+  # if (!(lrt %in% colnames(coefC))) {
+  #   stop(paste("Contrast", lrt, "not in continuous model coefficients. Available:",
+  #              paste(colnames(coefC), collapse = ", ")))
+  # }
+  #
+  # # Extract logFC for that term (raw, non-EB, always exists if model converged)
+  # logfc_raw <- coefC[, lrt]
+  # vcC <- zlmfit@vcovC
+  # se_raw <- vapply(vcC, function(V) {
+  #   # V may be a vector or scalar if covariance collapses → handle safely
+  #   if (is.null(dim(V))) return(NA_real_)
+  #   if (length(dim(V)) < 2) return(NA_real_)
+  #   if (!(lrt %in% rownames(V)) || !(lrt %in% colnames(V))) return(NA_real_)
+  #   sqrt(V[lrt, lrt])
+  # }, numeric(1))
+  # # Build the logFC dataframe
+  # fc <- data.frame(
+  #   gene = rownames(coefC),
+  #   log2FoldChange = logfc_raw,
+  #   stringsAsFactors = FALSE
+  # )
 
   fc <- dt |>
-    dplyr::filter(contrast == lrt, component == "logFC") |>
+    dplyr::filter(component == "logFC") |>
     dplyr::transmute(gene = primerid, log2FoldChange = coef, stat = z)
-
   pval <- dt |>
     dplyr::filter(contrast == lrt, component == "H") |>
     dplyr::transmute(gene = primerid, pvalue = `Pr(>Chisq)`)
@@ -402,6 +425,7 @@ pipeline_jan_and_methods <- function(sce,
                                      run_mast_fe = TRUE,
                                      run_mast_re = TRUE,
                                      run_deseq = TRUE,
+                                     lrt_term = "groupTreatment:timeEoT",
                                      design_formula = ~ group * time,
                                      design_formula_mast_rand =
                                        ~ group * time + (1 | sampleID),
@@ -412,7 +436,7 @@ pipeline_jan_and_methods <- function(sce,
     design_formula_mast = design_formula,
     design_formula_mast_rand = design_formula_mast_rand,
     design_formula_deseq = design_formula_deseq,
-    lrt_term = "groupTreatment:timeEoT",
+    lrt_term = lrt_term,
     ids_vars = c("subjectID", "time"),
     run_mast_fe = run_mast_fe,
     run_mast_re = run_mast_re,
@@ -427,6 +451,7 @@ pipeline_rescue_and_methods <- function(sce,
                                         run_mast = TRUE,
                                         run_mast_ran = TRUE,
                                         run_deseq = TRUE,
+                                        lrt_term = "groupTreatment:timeEoT",
                                         design_formula_mast =
                                           ~ group * time,
                                         design_formula_mast_rand =
@@ -439,7 +464,7 @@ pipeline_rescue_and_methods <- function(sce,
     design_formula_mast = design_formula_mast,
     design_formula_mast_rand = design_formula_mast_rand,
     design_formula_deseq = design_formula_deseq,
-    lrt_term = "groupTreatment:timeEoT",
+    lrt_term = lrt_term,
     ids_vars = c("subjectID", "time"),
     run_mast_fe = run_mast,
     run_mast_re = run_mast_ran,
@@ -467,28 +492,34 @@ splatpop_out <- pipeline_splatpop_and_methods(sce = sim_splatpop)
 
 
 ## Jan -------------------------------------------------------------------------
-jan_out <- pipeline_jan_and_methods(sce = sim_jan,
-                                    run_mast_fe = FALSE,
-                                    run_mast_re = TRUE,
-                                    run_deseq = FALSE)
+jan_out <- pipeline_jan_and_methods(sce = sim_jan)
 jan_out2 <- pipeline_jan_and_methods(sce = sim_jan,
-                                     design_formula =
-                                       ~ subjectID + time + group:time,
+                                     run_mast_fe = FALSE,
+                                     run_mast_re = TRUE,
+                                     run_deseq = FALSE,
                                      design_formula_mast_rand =
-                                       ~ subjectID + time + group:time +
-                                       (1 | sampleID),
-                                     design_formula_deseq =
-                                      ~ subjectID + time + group:time)
-jan_out3 <- pipeline_jan_and_methods(sce = sim_jan,
-                                     design_formula =
-                                       ~ subjectID + group*time,
-                                     design_formula_mast_rand =
-                                       ~ subjectID + time + group:time +
+                                       ~  time + group:time +
                                        (1 | subjectID:sampleID) + (1|sampleID),
-                                     design_formula_deseq =
-                                       ~ subjectID + group*time)
+                                     lrt_term = "timeEoT:groupTreatment")
+jan_out3 <- pipeline_jan_and_methods(sce = sim_jan,
+                                     run_mast_fe = FALSE,
+                                     run_mast_re = TRUE,
+                                     run_deseq = FALSE,
+                                     design_formula_mast_rand =
+                                       ~ subjectID + time + group:time +
+                                       (1|sampleID),
+                                     lrt_term = "timeEoT:groupTreatment")
 ##  rescueSim ------------------------------------------------------------------
 resc_out <- pipeline_rescue_and_methods(sce = sim_rescue)
+res_out2 <- pipeline_rescue_and_methods(sce = sim_rescue,
+                                        run_mast = FALSE,
+                                        run_mast_ran = TRUE,
+                                        run_deseq = FALSE,
+                                        design_formula_mast_rand =
+                                          ~  time + group:time +
+                                          (1 | subjectID:sampleID) +
+                                          (1|sampleID),
+                                        lrt_term = "timeEoT:groupTreatment")
 
 
 
@@ -502,16 +533,46 @@ splatpop_out$deseq$analysis   <- "splatpop"
 resc_out$mast_fe$analysis <- "rescueSim"
 resc_out$mast_re$analysis <- "rescueSim"
 resc_out$deseq$analysis   <- "rescueSim"
+resc2_out$mast_re$analysis <- "rescueSim"
 
 jan_out$mast_fe$analysis  <- "jan"
 jan_out$mast_re$analysis  <- "jan"
 jan_out$deseq$analysis    <- "jan"
+jan_out2$mast_re$analysis  <- "jan"
+
+standardize_df <- function(df) {
+  required_cols <- c(
+    "gene", "log2FoldChange", "pvalue", "padj", "method", "formula", "analysis"
+  )
+
+  missing <- setdiff(required_cols, colnames(df))
+  for (col in missing) df[[col]] <- NA
+
+  # keep only required columns (and in order)
+  df <- df[, required_cols, drop = FALSE]
+  return(df)
+}
+
+splatpop_out$mast_fe  <- standardize_df(splatpop_out$mast_fe)
+splatpop_out$mast_re  <- standardize_df(splatpop_out$mast_re)
+splatpop_out$deseq    <- standardize_df(splatpop_out$deseq)
+
+resc_out$mast_fe      <- standardize_df(resc_out$mast_fe)
+resc_out$mast_re      <- standardize_df(resc_out$mast_re)
+resc_out$deseq        <- standardize_df(resc_out$deseq)
+
+jan_out$mast_fe       <- standardize_df(jan_out$mast_fe)
+jan_out$mast_re       <- standardize_df(jan_out$mast_re)
+jan_out2$mast_re       <- standardize_df(jan_ou2t$mast_re)
+jan_out$deseq         <- standardize_df(jan_out$deseq)
+
+
 
 method_data <- rbind(
   splatpop_out$mast_fe, splatpop_out$mast_re, splatpop_out$deseq,
   resc_out$mast_fe, resc_out$mast_re, resc_out$deseq,
   jan_out$mast_fe, jan_out$mast_re, jan_out$deseq,
-  fill = TRUE
+  jan_out2$mast_re
 )
 
 board <- pins::board_local("nrgn-data")
@@ -522,6 +583,32 @@ pins::pin_write(method_data,
                 board = board,
                 versioned = FALSE
 )
+
+
+# Merge ground_truth with method data:
+
+method_data <- pins::pin_read(board, "method_data")
+ground_truth <- pins::pin_read(board, "ground_truth")
+
+method_data$analysis <- as.character(method_data$analysis)
+compare_data <- dplyr::bind_rows(
+  lapply(names(ground_truth), function(sim) {
+    dplyr::left_join(
+      method_data[method_data$analysis == sim, ],
+      ground_truth[[sim]],
+      by = "gene"
+    )
+  })
+)
+
+pins::pin_write(
+  compare_data,
+  name = "compare_data",
+  type = "rds",
+  board = board,
+  versioned = FALSE
+)
+
 
 
 #inspect structure of the data--------------------------------------------------
