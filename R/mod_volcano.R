@@ -57,6 +57,11 @@ mod_volcano_ui <- function(id) {
             ),
             choices = NULL
           ),
+          shiny::checkboxInput(
+            inputId = ns("highlight_truede"),
+            label = "Highlight true DE genes",
+            value = FALSE
+          ),
           shiny::radioButtons(
             inputId = ns("pvalue"),
             label = "P-value",
@@ -178,7 +183,8 @@ mod_volcano_server <- function(input, output, session, data) {
       dplyr::filter(method == input$de_method) |>
       dplyr::filter(analysis == input$data) |>
       dplyr::filter(formula == input$formula) |>
-      dplyr::mutate(neg_log10_pvalue = -log10(.data$pvalue)) |>
+      dplyr::mutate(neg_log10_pvalue = -log10(.data$pvalue),
+                    is_true_de = ifelse(trueDE == 1, TRUE, FALSE)) |>
       dplyr::arrange(.data$pvalue) |>
       dplyr::mutate(pvalue_adj = dplyr::case_when(
         (.data$padj <= as.numeric(input$pvalue)) ~ .data$pvalue,
@@ -210,11 +216,48 @@ mod_volcano_server <- function(input, output, session, data) {
 
     x_lims <- c(-max_es, max_es)
 
+    # If highlight is active, override significance colors for true DE genes
+    if (input$highlight_truede) {
+      df$significance <- ifelse(df$is_true_de, "true DE", df$significance)
+      counts <- df |>
+        dplyr::count(significance) |>
+        tibble::deframe()
 
-    color_order <- c(
-      "Upregulated" = "#b2182b", "Downregulated" = "#2166ac",
-      "Not significant" = "#c0c0c0"
-    )
+      # build legend labels with counts
+      legend_labels <- c(
+        "true DE" = paste0("true DE (", counts["true DE"], ")"),
+        "Upregulated" = paste0("Upregulated (", counts["Upregulated"], ")"),
+        "Downregulated" = paste0("Downregulated (", counts["Downregulated"], ")"),
+        "Not significant" = paste0("Not significant (", counts["Not significant"], ")")
+      )
+
+      color_order <- c(
+        "true DE" = "#C9980B",       # gold
+        "Upregulated" = "#b2182b",
+        "Downregulated" = "#2166ac",
+        "Not significant" = "#c0c0c0"
+      )
+    } else {
+      color_order <- c(
+        "Upregulated" = "#b2182b",
+        "Downregulated" = "#2166ac",
+        "Not significant" = "#c0c0c0"
+      )
+
+      counts <- df |>
+        dplyr::count(significance) |>
+        tibble::deframe()
+
+      # build legend labels with counts
+      legend_labels <- c(
+        "Upregulated" = paste0("Upregulated (", counts["Upregulated"], ")"),
+        "Downregulated" = paste0("Downregulated (", counts["Downregulated"], ")"),
+        "Not significant" = paste0("Not significant (", counts["Not significant"], ")")
+      )
+
+
+    }
+
 
     volcano_plot(
       data = df,
@@ -222,6 +265,7 @@ mod_volcano_server <- function(input, output, session, data) {
       y = "pvalue",
       color_col = "significance",
       colors = color_order,
+      color_labels = legend_labels,
       labels = "gene",
       y_axis_title = "P-value",
       x_axis_title = "Effect Size",
