@@ -181,22 +181,22 @@ mod_gt_server <- function(input, output, session, data) {
     ggplot2::ggplot(
       df,
       ggplot2::aes(
-        y = gene
+        y = gene,
+        color = trueDE
       )
     ) +
       # error bars for CIs
       ggplot2::geom_errorbar(
         ggplot2::aes(xmin = lower, xmax = upper),
         width = 0.2,
-        linewidth = 1.2,
-        color = "steelblue"
+        linewidth = 1.2
       ) +
       ggplot2::geom_point(
-        ggplot2::aes(x = log2FoldChange, color = trueDE),
+        ggplot2::aes(x = log2FoldChange),
         size = 3
       ) +
       ggplot2::scale_color_manual(values = c(
-        `TRUE` = "#C9980B",
+        `TRUE` = "red",
         `FALSE` = "steelblue")
         ) +
       ggplot2::geom_point(
