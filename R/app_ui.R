@@ -25,9 +25,10 @@ app_ui <- function(request) {
       # bslib::nav_panel('Overview', mod_overview_ui('overview')),
       bslib::nav_panel('DR Plots', mod_dr_ui('dim_red')),
       bslib::nav_panel('Volcano Plots', mod_volcano_ui('volcano')),
-      bslib::nav_panel('ROC Plots', mod_roc_ui('roc'))
+      bslib::nav_panel('ROC Plots', mod_roc_ui('roc')),
+      bslib::nav_panel('Ground Truth Plot', mod_gt_ui('gt')),
       # bslib::nav_panel('Error Bars', mod_errorbars_ui('error_bars')),
-      # bslib::nav_panel('Gene of Interest', mod_goi_ui('goi'))
+      bslib::nav_panel('Gene of Interest', mod_goi_ui('goi'))
     )
   )
 }
