@@ -1,12 +1,3 @@
-#' mod_roc UI Function
-#'
-#' @description A shiny Module.
-#'
-#' @param id,input,output,session Internal parameters for {shiny}.
-#'
-#' @noRd
-#'
-#' @importFrom shiny NS tagList
 mod_roc_ui <- function(id) {
   ns <- shiny::NS(id)
 
@@ -20,8 +11,8 @@ mod_roc_ui <- function(id) {
         id = ns("roc_accordion"),
 
         bslib::accordion_panel(
-          title = "ROC settings",
-          icon = shiny::icon("chart-line"),
+          title = "ROC / PR settings",
+          icon = shiny::icon("sliders"),
 
           shiny::selectInput(
             ns("analysis"),
@@ -35,34 +26,92 @@ mod_roc_ui <- function(id) {
             choices = NULL
           ),
 
-          shiny::checkboxInput(
-            ns("smooth"),
-            "Smooth ROC curve",
-            value = FALSE
+          shiny::selectInput(
+            inputId = ns("formula"),
+            label = bslib::tooltip(
+              trigger = shiny::tagList("Select formula", shiny::icon("circle-info")),
+              "Select which DE model formula to evaluate."
+            ),
+            choices = NULL
           )
         )
       ),
 
+
       bslib::layout_columns(
         col_widths = 12,
+        bslib::navset_card_tab(
 
-        bslib::card(
-          bslib::card_header(
+
+          bslib::nav_panel(
+            title = "ROC Curve",
+            icon = shiny::icon("chart-line"),
+
             div(
-              style="display:flex; justify-content:space-between; align-items:center;",
-              "ROC Curve",
-              shiny::downloadButton(ns("download_roc"), "")
+              style = "overflow-y: auto; padding-right: 10px; padding-left: 10px;",
+
+              # ROC plot card
+              bslib::card(
+                style = "margin-bottom: 1rem;",
+                bslib::card_header(
+                  div(
+                    style="display:flex; justify-content:space-between; align-items:center;",
+                    "ROC Curve",
+                    shiny::downloadButton(ns("download_roc"), "")
+                  )
+                ),
+                bslib::card_body(
+                  shiny::plotOutput(ns("roc_plot"), height = "550px")
+                )
+              ),
+
+              # ROC table card
+              bslib::card(
+                bslib::card_header("ROC AUC Table"),
+                bslib::card_body(
+                  div(
+                    style = "width: 100%",
+                    DT::DTOutput(ns("roc_table"))
+                  )
+                )
+              )
             )
           ),
-          bslib::card_body(
-            shiny::plotOutput(ns("roc_plot"), height = "550px")
-          )
-        ),
 
-        bslib::card(
-          bslib::card_header("ROC AUC Table"),
-          bslib::card_body(
-            DT::DTOutput(ns("roc_table"))
+
+          bslib::nav_panel(
+            title = "PR Curve",
+            icon = shiny::icon("chart-area"),
+
+            div(
+              style = "overflow-y: auto; padding-right: 10px; padding-left: 10px;",
+
+              # PR plot card
+              bslib::card(
+                style = "margin-bottom: 1rem;",
+                bslib::card_header(
+                  div(
+                    style="display:flex; justify-content:space-between; align-items:center;",
+                    "PR Curve",
+                    shiny::downloadButton(ns("download_pr"), "")
+                  )
+                ),
+                bslib::card_body(
+                  shiny::plotOutput(ns("pr_plot"), height = "550px")
+                )
+              ),
+
+              # PR table card
+              bslib::card(
+                bslib::card_header("PR Curve Table"),
+                bslib::card_body(
+                  div(
+                    style = "width: 100%",
+                    DT::DTOutput(ns("pr_table"))
+                  )
+                )
+              )
+            )
           )
         )
       )
@@ -70,96 +119,166 @@ mod_roc_ui <- function(id) {
   )
 }
 
+
 #' mod_roc Server Functions
 #'
 #' @noRd
 mod_roc_server <- function(input, output, session, data) {
-    ns <- session$ns
-
-    # populate analysis dropdown
-    observe({
-      shiny::updateSelectInput(
-        session,
-        "analysis",
-        choices = unique(data$analysis),
-        selected = unique(data$analysis)[1]
-      )
-    })
-
-    # populate method dropdown based on analysis
-    observeEvent(input$analysis, {
-      df <- data |>
-        dplyr::filter(analysis == input$analysis)
-
-      shiny::updateSelectInput(
-        session,
-        "method",
-        choices = unique(df$method),
-        selected = unique(df$method)[1]
-      )
-    })
-
-    # reactive data for the selected method & analysis
-    roc_data <- reactive({
-      req(input$analysis, input$method)
-
-      df <- data |>
-        dplyr::filter(
-          analysis == input$analysis,
-          method == input$method
-        ) |>
-        dplyr::filter(!is.na(trueDE)) |>
-        dplyr::mutate(score = -log10(.data$padj))
-
-      df
-    })
-
-    # compute ROC using precrec
-    roc_obj <- reactive({
-      df <- roc_data()
-      precrec::evalmod(
-        scores = df$score,
-        labels = df$trueDE
-      )
-    })
-
-    # plot ROC
-    output$roc_plot <- shiny::renderPlot({
-      req(roc_obj())
-      plt <- suppressWarnings(
-        ggplot2:::autoplot(roc_obj(), curvetype = "ROC")
-      ) +
-        ggplot2::labs(
-          title = paste("ROC Curve -", input$method),
-          subtitle = paste("Analysis:", input$analysis)
-        ) +
-        ggplot2::theme_bw(base_size = 16)  +
-        ggplot2::theme(
-          aspect.ratio = 1,
-          text = ggplot2::element_text(size = 18)
-        )
+  ns <- session$ns
 
 
-      if (input$smooth) {
-        plt <- plt + ggplot2::geom_smooth(se = FALSE)
-      }
-
-      plt
-    })
-
-    # AUC table
-    output$roc_table <- DT::renderDT({
-      auc <- precrec::auc(roc_obj())
-      DT::datatable(auc)
-    })
-
-    # download handler
-    output$download_roc <- shiny::downloadHandler(
-      filename = function() {
-        paste0("ROC_", input$analysis, "_", input$method, ".png")
-      },
-      content = function(file) {
-        ggsave(file, plot = output$roc_plot(), width = 7, height = 6)
-      }
+  observe({
+    shiny::updateSelectInput(
+      session,
+      "analysis",
+      choices = unique(data$analysis),
+      selected = unique(data$analysis)[1]
     )
+  })
+
+  observeEvent(input$analysis, {
+    req(input$analysis)
+    df <- data |> dplyr::filter(analysis == input$analysis)
+
+    shiny::updateSelectInput(
+      session, "method",
+      choices = unique(df$method),
+      selected = unique(df$method)[1]
+    )
+  })
+
+  observeEvent(c(input$analysis,input$method), {
+    req(input$analysis, input$method)
+    df <- data |> dplyr::filter(
+      analysis == input$analysis,
+      method == input$method
+    )
+    shiny::updateSelectInput(
+      session, "formula",
+      choices = unique(df$formula),
+      selected = unique(df$formula)[1]
+    )
+  })
+
+
+  rocpr_data <- reactive({
+    req(input$analysis, input$method, input$formula)
+
+    data |>
+      dplyr::filter(
+        analysis == input$analysis,
+        method == input$method,
+        formula == input$formula,
+        !is.na(trueDE)
+      ) |>
+      dplyr::mutate(score = -log10(padj))
+  })
+
+  # ----------------------
+  # SHARED EVALMOD OBJECT
+  # ----------------------
+  rocpr_obj <- reactive({
+    df <- rocpr_data()
+
+    # prevent evalmod from running on empty data
+    validate(
+      need(!is.null(df) && nrow(df) > 0,
+           "Loading...")
+    )
+
+    precrec::evalmod(
+      scores = df$score,
+      labels = df$trueDE
+    )
+  })
+
+  # ----------------------
+  # ROC PLOT
+  # ----------------------
+  output$roc_plot <- shiny::renderPlot({
+    req(rocpr_obj())
+
+    plt <- suppressWarnings(ggplot2::autoplot(rocpr_obj(), curvetype = "ROC")) +
+      ggplot2::labs(
+        title = paste("ROC Curve -", input$method),
+        subtitle = paste("Analysis:", input$analysis)
+      ) +
+      ggplot2::theme_bw(base_size = 16) +
+      ggplot2::theme(aspect.ratio = 1)
+
+    plt
+  })
+
+  # ----------------------
+  # ROC TABLE
+  # ----------------------
+  output$roc_table <- DT::renderDT({
+    req(rocpr_obj())
+
+    auc <- precrec::auc(rocpr_obj())
+    DT::datatable(
+      auc,
+      options = list(
+        pageLength = 10,
+        scrollX = TRUE,
+        searching = TRUE,
+        ordering = TRUE
+      )
+    )
+  })
+
+  # ----------------------
+  # PR PLOT
+  # ----------------------
+  output$pr_plot <- shiny::renderPlot({
+    req(rocpr_obj())
+
+    plt <- suppressWarnings(ggplot2::autoplot(rocpr_obj(), curvetype = "PR")) +
+      ggplot2::labs(
+        title = paste("PR Curve -", input$method),
+        subtitle = paste("Analysis:", input$analysis)
+      ) +
+      ggplot2::theme_bw(base_size = 16) +
+      ggplot2::theme(aspect.ratio = 1)
+
+    plt
+  })
+
+  # ----------------------
+  # PR TABLE  (same style as volcano)
+  # ----------------------
+  output$pr_table <- DT::renderDT({
+    req(rocpr_obj())
+    auc <- precrec::auc(rocpr_obj())
+    DT::datatable(
+      auc,
+      options = list(
+        pageLength = 10,
+        scrollX = TRUE,
+        searching = TRUE,
+        ordering = TRUE
+      )
+    )
+  })
+
+  # ----------------------
+  # DOWNLOAD HANDLERS
+  # ----------------------
+  output$download_roc <- shiny::downloadHandler(
+    filename = function() {
+      paste0("ROC_", input$analysis, "_", input$method, ".png")
+    },
+    content = function(file) {
+      ggsave(file, output$roc_plot(), width = 7, height = 6)
+    }
+  )
+
+  output$download_pr <- shiny::downloadHandler(
+    filename = function() {
+      paste0("PR_", input$analysis, "_", input$method, ".png")
+    },
+    content = function(file) {
+      ggsave(file, output$pr_plot(), width = 7, height = 6)
+    }
+  )
 }
