@@ -565,8 +565,34 @@ jan_out10 <- pipeline_jan_and_methods(sce = sim_jan_ref,
                                      run_mast_re = FALSE,
                                      run_deseq = TRUE,
                                      design_formula_deseq =
-                                       ~  time + group:time + subjectID,
+                                       ~  time + group:time,
                                      lrt_term = "timeEoT:groupTreatment")
+
+
+jan_out11 <- pipeline_jan_and_methods(sce = sim_jan,
+                                     run_mast_fe = FALSE,
+                                     run_mast_re = TRUE,
+                                     run_deseq = FALSE,
+                                     design_formula_mast_rand =
+                                       ~ group*time + subjectID +
+                                       (1|sampleID),
+                                     lrt_term = "groupTreatment:timeEoT")
+
+
+jan_out12 <- pipeline_jan_and_methods(sce = sim_jan,
+                                     run_mast_fe = TRUE,
+                                     run_mast_re = FALSE,
+                                     run_deseq = FALSE,
+                                     design_formula =
+                                       ~  group*time + subjectID,
+                                     lrt_term = "is.grouptime")
+jan_out13 <- pipeline_jan_and_methods(sce = sim_jan,
+                                      run_mast_fe = FALSE,
+                                      run_mast_re = FALSE,
+                                      run_deseq = TRUE,
+                                      design_formula_deseq =
+                                        ~  group*time + subjectID,
+                                      lrt_term = "timeEoT:groupTreatment")
 
 
 ##  rescueSim ------------------------------------------------------------------
@@ -700,6 +726,30 @@ resc_out12 <- pipeline_rescue_and_methods(sce = sim_rescue_ref,
                                             ~  time + group:time + subjectID +
                                             (1|sampleID),
                                           lrt_term = "timeEoT:groupTreatment")
+resc_out13 <- pipeline_rescue_and_methods(sce = sim_rescue,
+                                          run_mast = FALSE,
+                                          run_mast_ran = FALSE,
+                                          run_deseq = TRUE,
+                                          design_formula_deseq =
+                                            ~  group*time + subjectID,
+                                          lrt_term = "timeEoT:groupTreatment")
+resc_out14 <- pipeline_rescue_and_methods(sce = sim_rescue,
+                                        run_mast = FALSE,
+                                        run_mast_ran = TRUE,
+                                        run_deseq = FALSE,
+                                        design_formula_mast_rand =
+                                          ~  group*time + subjectID +
+                                          (1|sampleID),
+                                        lrt_term = "groupTreatment:timeEoT")
+resc_out15 <- pipeline_rescue_and_methods(sce = sim_rescue,
+                                        run_mast = TRUE,
+                                        run_mast_ran = FALSE,
+                                        run_deseq = FALSE,
+                                        design_formula_mast =
+                                          ~  group*time + subjectID,
+                                        lrt_term = "groupTreatment:timeEoT")
+
+
 
 # Pin data ---------------------------------------------------------------------
 splatpop_out$mast_fe$analysis <- "splatpop"
@@ -720,6 +770,9 @@ resc_out9$mast_re$analysis <- "rescueSim"
 resc_out10$deseq$analysis <- "rescueSim"
 resc_out11$mast_re$analysis <- "rescueSim"
 resc_out12$mast_re$analysis <- "rescueSim"
+# resc_out13$deseq$analysis <- "rescueSim"
+resc_out14$mast_re$analysis <- "rescueSim"
+resc_out15$mast_fe$analysis <- "rescueSim"
 
 jan_out$mast_fe$analysis  <- "jan"
 jan_out$mast_re$analysis  <- "jan"
@@ -733,17 +786,25 @@ jan_out7$mast_fe$analysis  <- "jan"
 jan_out8$mast_re$analysis  <- "jan"
 jan_out9$mast_re$analysis  <- "jan"
 jan_out10$deseq$analysis  <- "jan"
+jan_out11$mast_re$analysis  <- "jan"
+jan_out12$mast_fe$analysis  <- "jan"
+# jan_out13$deseq$analysis  <- "jan"
 
 method_data <- rbind(
   splatpop_out$mast_fe, splatpop_out$mast_re, splatpop_out$deseq,
+
   resc_out$mast_fe, resc_out$mast_re, resc_out$deseq, res_out3$mast_re,
   resc_out4$mast_fe, resc_out5$mast_fe, resc_out6$deseq,
   resc_out7$mast_re, resc_out8$mast_re, resc_out9$mast_re,
   resc_out10$deseq, resc_out11$mast_re, resc_out12$mast_re,
+  # resc_out13$deseq,
+  resc_out14$mast_re, resc_out15$mast_fe,
+
   jan_out$mast_fe, jan_out$mast_re, jan_out$deseq, jan_out3$mast_re,
   jan_out4$mast_fe, jan_out5$mast_re, jan_out6$deseq,
   jan_out7$mast_fe, jan_out8$mast_re, jan_out9$mast_re,
-  jan_out10$deseq,
+  jan_out10$deseq, jan_out11$mast_re, jan_out12$mast_fe,
+  # jan_out13$deseq,
   fill = TRUE
 )
 
@@ -754,7 +815,7 @@ pins::pin_write(method_data,
                 name = "method_data",
                 type = "rds",
                 board = board,
-                versioned = FALSE
+                versioned = TRUE
 )
 
 
@@ -779,6 +840,6 @@ pins::pin_write(
   name = "compare_data",
   type = "rds",
   board = board,
-  versioned = FALSE
+  versioned = TRUE
 )
 
