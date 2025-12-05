@@ -350,7 +350,8 @@ run_methods <- function(
       sce,
       ids = ids,
       design_formula = design_formula_deseq,
-      relevel = list(condition_var, sample_var)
+      relevel = list(condition_var, sample_var),
+      contrast = lrt_term
     )
     if (!is.null(deseq_res)) {
       deseq_res$method <- "DESeq2"
@@ -591,7 +592,7 @@ jan_out13 <- pipeline_jan_and_methods(sce = sim_jan,
                                       run_mast_re = FALSE,
                                       run_deseq = TRUE,
                                       design_formula_deseq =
-                                        ~  group*time + subjectID,
+                                        ~ subjectID + group*time,
                                       lrt_term = "timeEoT:groupTreatment")
 
 
