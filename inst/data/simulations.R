@@ -130,7 +130,6 @@ make_rescuesim_params <- function(RecAM_sce,
 
 #### rescueSim data ------------------------------------------------------------
 simulate_rescue <- function(params) {
-  set.seed(42)
   sim <- rescueSim::simRescueData(params)
   sim <- scater::logNormCounts(sim)
   sim <- scater::runPCA(sim, ncomponents = 10)
@@ -319,7 +318,7 @@ data <- simulate_splatpop(
   n_snps = 1000,
   params = params
 )
-splatpo_sim <- data$sce
+splatpop_sim <- data$sce
 splatpop_ground_truth <- data$ground_truth
 
 
@@ -335,10 +334,45 @@ jan_ground_truth <- data$ground_truth
 
 ## rescueSim -------------------------------------------------------------------
 data("RecAM_sce", package = "rescueSim")
+set.seed(42)
 params <- make_rescuesim_params(RecAM_sce, nSubjsPerGroup = 5)
-data <- simulate_rescue(params)
+set.seed(42)
+data1 <- simulate_rescue(params)
 rescuesim_sim <- data$sce
 rescuesim_ground_truth <- data$ground_truth
+#seed 123
+data("RecAM_sce", package = "rescueSim")
+set.seed(123)
+params <- make_rescuesim_params(RecAM_sce, nSubjsPerGroup = 5)
+set.seed(123)
+data <- simulate_rescue(params)
+rescuesim_sim_2 <- data$sce
+rescuesim_ground_truth_2 <- data$ground_truth
+#seed 111
+data("RecAM_sce", package = "rescueSim")
+set.seed(111)
+params <- make_rescuesim_params(RecAM_sce, nSubjsPerGroup = 5)
+set.seed(111)
+data <- simulate_rescue(params)
+rescuesim_sim_3 <- data$sce
+rescuesim_ground_truth_3 <- data$ground_truth
+#seed 222
+data("RecAM_sce", package = "rescueSim")
+set.seed(222)
+params <- make_rescuesim_params(RecAM_sce, nSubjsPerGroup = 5)
+set.seed(222)
+data <- simulate_rescue(params)
+rescuesim_sim_4 <- data$sce
+rescuesim_ground_truth_4 <- data$ground_truth
+#seed 333
+data("RecAM_sce", package = "rescueSim")
+set.seed(333)
+params <- make_rescuesim_params(RecAM_sce, nSubjsPerGroup = 5)
+set.seed(333)
+data <- simulate_rescue(params)
+rescuesim_sim_5 <- data$sce
+rescuesim_ground_truth_5 <- data$ground_truth
+
 
 
 # Pin simulations --------------------------------------------------------------
@@ -346,12 +380,20 @@ board <- pins::board_local("nrgn-data")
 simulation <- c(
   "splatpop" = splatpop_sim,
   "rescueSim" = rescuesim_sim,
+  "rescueSim_123" = rescuesim_sim_2,
+  "rescueSim_111" = rescuesim_sim_3,
+  "rescueSim_222" = rescuesim_sim_4,
+  "rescueSim_333" = rescuesim_sim_5,
   "jan" = jan_sim
 )
 
 ground_truth <- list(
   "splatpop"   = splatpop_ground_truth,
   "rescueSim"  = rescuesim_ground_truth,
+  "rescueSim_123"  = rescuesim_ground_truth_2,
+  "rescueSim_111"  = rescuesim_ground_truth_3,
+  "rescueSim_222"  = rescuesim_ground_truth_4,
+  "rescueSim_333"  = rescuesim_ground_truth_5,
   "jan"        = jan_ground_truth
 )
 
