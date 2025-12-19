@@ -9,19 +9,17 @@ app_server <- function(input, output, session) {
 
   board <- pins::board_local("nrgn-data")
 
-  method_data  <- pins::pin_read(board, "method_data")
+  method_data  <- pins::pin_read(board, "method_data_new")
   simulation <- pins::pin_read(board, "simulations")
-  compare <- pins::pin_read(board, "compare_data")
+  compare <- pins::pin_read(board, "compare_data_new")
+  ci_data <- pins::pin_read(board, "rescueSim_ci")
 
   # callModule(mod_overview_server, "overview", sim = sim_pop_cond)
   callModule(mod_dr_server, "dim_red", data = simulation)
   callModule(mod_volcano_server, "volcano", data = compare)
   callModule(mod_roc_server, "roc", data = compare)
   callModule(mod_gt_server, "gt", data = compare)
-
-  # callModule(mod_errorbars_server, "error_bars",
-  #   data = method_data,
-  #   sim = sim_pop_cond
-  # )
+  callModule(mod_hist_logfc_server, "hist_module", data = compare)
+  callModule(mod_ci_hist_server, "ci_module", data = ci_data)
   callModule(mod_goi_server, "goi", sce_list = simulation)
 }
