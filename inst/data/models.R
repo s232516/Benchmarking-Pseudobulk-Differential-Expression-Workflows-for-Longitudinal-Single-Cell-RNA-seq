@@ -2,16 +2,16 @@ library(BiocParallel)
 # Methods ----------------------------------------------------------------------
 ## MAST ------------------------------------------------------------------------
 run_mast <- function(
-    sce,
-    formula = ~Condition,
-    lrt = "ConditionTreatment",
-    random_var = NULL,
-    subject_var = NULL,
-    random = FALSE, # switch between fixed and random effects
-    method = NULL, # override if needed
-    ebayes = TRUE,
-    check_sanity = FALSE,
-    verbose = TRUE # print progress messages
+  sce,
+  formula = ~Condition,
+  lrt = "ConditionTreatment",
+  random_var = NULL,
+  random = FALSE, # switch between fixed and random effects
+  method = NULL, # override if needed
+  ebayes = TRUE,
+  check_sanity = FALSE,
+  verbose = TRUE, # print progress messages
+  min_samples = 5
 ) {
   # Convert SCE to SingleCellAssay
   if (verbose) message("Converting SCE to SingleCellAssay...")
@@ -20,7 +20,7 @@ run_mast <- function(
   # Basic filtering
   expr <- as.matrix(SummarizedExperiment::assay(sca))
 
-  #filter the genes that are not in all combinations
+  # filter the genes that are not in all combinations
 
   if (random) {
     # Choose the sample-level variable
@@ -40,13 +40,14 @@ run_mast <- function(
     )
 
     # Ensure matrix shape: if only one sample, vapply returns a vector
-    if (is.vector(detected_in_sample)) detected_in_sample <- matrix(
-      detected_in_sample,
-      ncol = 1
-    )
+    if (is.vector(detected_in_sample)) {
+      detected_in_sample <- matrix(
+        detected_in_sample,
+        ncol = 1
+      )
+    }
 
     # Filter genes detected in ≥ minimum number of samples, in this case 5.
-    min_samples <- 5
     keep_overall <- rowSums(detected_in_sample) >= min_samples
 
     # Require some expression in every group×time combo
@@ -66,16 +67,18 @@ run_mast <- function(
       function(idx) rowSums(expr[, idx, drop = FALSE] > 0) > 0,
       logical(nrow(expr))
     )
-    if (is.vector(detected_in_combo)) detected_in_combo <- matrix(
-      detected_in_combo,
-      ncol = 1
-    )
+    if (is.vector(detected_in_combo)) {
+      detected_in_combo <- matrix(
+        detected_in_combo,
+        ncol = 1
+      )
+    }
     keep_combo <- rowSums(detected_in_combo) == ncol(detected_in_combo)
 
     # Ensure enough non-zero observations for random effects
     n_levels <- nlevels(samples)
     nz_total <- rowSums(expr > 0)
-    keep_nz <- nz_total > n_levels  # glmer requires obs > levels
+    keep_nz <- nz_total > n_levels # glmer requires obs > levels
 
     # combine all random-effect filters
     keep <- keep_overall & keep_combo & keep_nz
@@ -90,8 +93,12 @@ run_mast <- function(
   } else {
     # simpler case for fixed effects
     keep <- rowSums(expr > 0) > 0
-    if (verbose) message("Keeping ", sum(keep), " non-zero genes out of ",
-                         length(keep))
+    if (verbose) {
+      message(
+        "Keeping ", sum(keep), " non-zero genes out of ",
+        length(keep)
+      )
+    }
   }
 
 
@@ -162,18 +169,19 @@ run_mast <- function(
 
 ## DESeq2 pseudobulk -----------------------------------------------------------
 run_deseq_pseudobulk <- function(
-    sce,
-    ids,
-    design_formula,
-    relevel = list(),
-    # named list, e.g. list(Treatment = "Placebo", Time = "Baseline")
-    min_counts = 10,
-    sfType = "ratio",
-    contrast = NULL,
-    # optional: DESeq2-style contrast or coefficient name
-    alpha = 0.05,
-    save_dds = FALSE,
-    verbose = TRUE
+  sce,
+  ids,
+  design_formula,
+  relevel = NULL,
+  # named list, e.g. list(Treatment = "Placebo", Time = "Baseline")
+  min_counts = 10,
+  sfType = "ratio",
+  lrt_term = NULL,
+  # optional: MAST-style contrast or coefficient name
+  alpha = 0.05,
+  save_dds = FALSE,
+  verbose = TRUE,
+  filter = FALSE
 ) {
   # Aggregate to pseudobulk
   if (verbose) message("Aggregating to pseudobulk...")
@@ -197,18 +205,67 @@ run_deseq_pseudobulk <- function(
   })
 
   # Relevel factors if specified
-  for (var in names(relevel)) {
-    ref <- relevel[[var]]
-    if (var %in% colnames(metadata)) {
-      metadata[[var]] <- factor(metadata[[var]],
-                                levels = unique(metadata[[var]])
-      )
-      metadata[[var]] <- stats::relevel(metadata[[var]], ref = ref)
-      if (verbose) message("Relevelled ", var, " (reference = ", ref, ")")
-    } else {
-      message("Variable ", var, " not found in metadata; skipping relevel.")
+  if (!is.null(relevel)) {
+    for (var in names(relevel)) {
+      ref <- relevel[[var]]
+      if (var %in% colnames(metadata)) {
+        metadata[[var]] <- relevel(metadata[[var]], ref = ref)
+        if (verbose) {
+          message("Relevelled ", var, " (reference = ", ref, ")")
+        }
+      }
     }
   }
+
+  if (filter) {
+    if (verbose) message("Applying MAST-style filtering on pseudobulk...")
+
+    # Extract pseudobulk counts
+    expr <- SummarizedExperiment::assay(pb, "counts")
+
+    # Metadata of pseudobulk samples
+    md <- metadata
+
+    # Identify condition variable automatically (first in design)
+    cond_var <- all.vars(design_formula)[1]
+    cond <- md[[cond_var]]
+    cond <- droplevels(cond)
+
+    # 1. DETECTION PER SAMPLE (gene expressed if count > 0)
+    detected_by_sample <- expr > 0
+
+    # 2. FILTER: gene detected in at least 1 sample per condition
+    detected_by_condition <- sapply(levels(cond), function(gr) {
+      idx <- which(cond == gr)
+      rowSums(detected_by_sample[, idx, drop = FALSE]) > 0
+    })
+
+    # If only one condition, sapply returns a vector
+    if (is.vector(detected_by_condition)) {
+      detected_by_condition <- matrix(detected_by_condition, ncol = 1)
+    }
+
+    keep_condition <- rowSums(detected_by_condition) == ncol(detected_by_condition)
+
+    # 3. FILTER: gene must have enough non-zero counts overall
+    keep_nz <- rowSums(detected_by_sample) >= 2 # like MAST's min cells detected
+
+    # 4. FILTER: gene must have reasonable total count
+    keep_count <- rowSums(expr) >= min_counts
+
+    # Combine all
+    keep <- keep_condition & keep_nz & keep_count
+
+    if (verbose) {
+      message("Keeping ", sum(keep), " genes after filtering:")
+      message(" - detected in ≥1 sample in EACH condition")
+      message(" - detected in ≥2 pseudobulk samples total")
+      message(" - total counts ≥ ", min_counts)
+    }
+
+    pb <- pb[keep, ]
+  }
+
 
   # Create DESeq dataset
   if (verbose) message("Creating DESeq2 dataset...")
@@ -255,21 +312,49 @@ run_deseq_pseudobulk <- function(
     return(NULL)
   }
 
-  # Extract results
-  if (verbose) message("Extracting results...")
-  res <- tryCatch(
-    if (is.null(contrast)) {
-      DESeq2::results(dds, alpha = alpha)
-    } else if (is.character(contrast)) {
-      DESeq2::results(dds, name = contrast, alpha = alpha)
-    } else {
-      DESeq2::results(dds, contrast = contrast, alpha = alpha)
-    },
-    error = function(e) {
-      message("results() failed: ", e$message)
-      return(NULL)
+  ### FIX 3 — Determine the actual DESeq2 coefficient name #############
+  dseq_names <- DESeq2::resultsNames(dds)
+
+  if (verbose) {
+    message("\nDESeq2 coefficient names:")
+    print(dseq_names)
+  }
+  ######################################################################
+
+
+  ### FIX 4 — Map the MAST LRT term to the DESeq2 coefficient #########
+  if (!is.null(lrt_term)) {
+    search_term <- lrt_term
+
+    # find the match in DESeq2 coefficient names
+    coef_name <- grep(search_term, dseq_names, value = TRUE)
+
+    if (length(coef_name) == 0) {
+      stop(
+        "Could not match MAST term '", lrt_term,
+        "' to any DESeq2 coefficient. Search term = ", search_term
+      )
     }
-  )
+    if (length(coef_name) > 1) {
+      stop(
+        "MAST term '", lrt_term, "' maps to multiple DESeq2 coefficients: ",
+        paste(coef_name, collapse = ", ")
+      )
+    }
+
+
+    if (verbose) {
+      message("\nMAST term: ", lrt_term)
+      message("Mapped DESeq2 coefficient: ", coef_name)
+    }
+    #######################################################################
+    ### FIX 5 — use name= instead of contrast=
+    res <- DESeq2::results(dds, name = coef_name, alpha = alpha)
+  } else {
+    ### fallback (should rarely be used)
+    res <- DESeq2::results(dds, alpha = alpha)
+  }
+
   if (is.null(res)) {
     return(NULL)
   }
@@ -283,6 +368,7 @@ run_deseq_pseudobulk <- function(
       lfcSE = ifelse(is.finite(stat), abs(log2FoldChange / stat), NA_real_)
     )
 
+  # In case we want to access to the DESeq object:
   if (save_dds) attr(df, "dds") <- dds
 
   if (verbose) message("DESeq2 run completed: ", nrow(df), " genes tested.")
@@ -292,17 +378,19 @@ run_deseq_pseudobulk <- function(
 
 ## Combination of all of them:--------------------------------------------------
 run_methods <- function(
-    sce,
-    condition_var = "Condition", # column for condition (e.g. Treatment)
-    sample_var = "Sample", # column for random effect / pseudobulk aggregation
-    design_formula_mast = ~ Condition,
-    design_formula_mast_rand = ~ Condition + (1 | Sample),
-    design_formula_deseq = ~ Condition,
-    lrt_term = "ConditionTreatment", # term to test in MAST
-    ids_vars = c("Sample", "Condition"), # columns for pseudobulk aggregation
-    run_mast_fe = TRUE,
-    run_mast_re = TRUE,
-    run_deseq = TRUE
+  sce,
+  relevel = list(Condition = "Placebo"),
+  sample_var = "Sample", # column for random effect / pseudobulk aggregation
+  design_formula_mast = ~Condition,
+  design_formula_mast_rand = ~ Condition + (1 | Sample),
+  design_formula_deseq = ~Condition,
+  lrt_term = "ConditionTreatment", # term to test in MAST
+  lrt_term_deseq = "Condition", # term to test in DESeq2
+  ids_vars = c("Sample", "Condition"), # columns for pseudobulk aggregation
+  run_mast_fe = TRUE,
+  run_mast_re = TRUE,
+  run_deseq = TRUE,
+  filter = FALSE
 ) {
   res_list <- list()
 
@@ -312,8 +400,12 @@ run_methods <- function(
     mast_fe <- run_mast(
       sce,
       formula = design_formula_mast,
-      lrt = lrt_term
+      lrt = lrt_term,
+      random_var = NULL,
+      random = FALSE,
+      ebayes = FALSE
     )
+    message("MAST (fixed effects) completed")
 
     if (!is.null(mast_fe)) {
       mast_fe$method <- "MAST (fixed)"
@@ -334,6 +426,7 @@ run_methods <- function(
       method = "glmer",
       ebayes = FALSE
     )
+    message("MAST (random effects) completed")
 
     if (!is.null(mast_re)) {
       mast_re$method <- "MAST (random)"
@@ -346,13 +439,19 @@ run_methods <- function(
   if (run_deseq) {
     message("Running DESeq2 (pseudobulk)...")
     ids <- SummarizedExperiment::colData(sce)[, ids_vars, drop = FALSE]
+    message(
+      "Using IDs for pseudobulk aggregation: ",
+      paste(ids_vars, collapse = ", ")
+    )
     deseq_res <- run_deseq_pseudobulk(
       sce,
       ids = ids,
       design_formula = design_formula_deseq,
-      relevel = list(condition_var, sample_var),
-      contrast = lrt_term
+      relevel = relevel,
+      lrt_term = lrt_term_deseq,
+      filter = filter
     )
+    message("DESeq completed")
     if (!is.null(deseq_res)) {
       deseq_res$method <- "DESeq2"
       deseq_res$formula <- deparse(design_formula_deseq)
@@ -368,43 +467,44 @@ run_methods <- function(
 # Pipelines --------------------------------------------------------------------
 ## SplatPop pipeline with methods ----------------------------------------------
 pipeline_splatpop_and_methods <- function(
-    sce,
-    n_samples = 20,
-    n_snps = 1000,
-    params = NULL,
-    run_mast_fe = TRUE,
-    run_mast_re = TRUE,
-    run_deseq = TRUE,
-    design_formula_mast = ~Condition,
-    design_formula_mast_rand = ~ Condition + (1 | Sample),
-    design_formula_deseq = ~Condition
+  sce,
+  run_mast_fe = TRUE,
+  run_mast_re = TRUE,
+  run_deseq = TRUE,
+  design_formula_mast = ~Condition,
+  design_formula_mast_rand = ~ Condition + (1 | Sample),
+  design_formula_deseq = ~Condition
 ) {
-
   splat_results <- run_methods(
     sce = sce,
-    condition_var = "Condition",
     sample_var = "Sample",
     design_formula_mast = design_formula_mast,
     design_formula_mast_rand = design_formula_mast_rand,
     design_formula_deseq = design_formula_deseq,
     lrt_term = "ConditionTreatment",
-    ids_vars = "Sample"
+    lrt_term_deseq = "Condition_Treatment_vs_Placebo",
+    ids_vars = "Sample",
+    relevel = list(Condition = "Placebo"),
+    run_mast_fe = run_mast_fe,
+    run_mast_re = run_mast_re,
+    run_deseq = run_deseq
   )
 }
 
 ## Jan pipeline with methods ---------------------------------------------------
-pipeline_jan_and_methods <- function(sce,
-                                     nSubjsPerGroup = 20,
-                                     nCellsPerSubjectTimepoint = 100,
-                                     nGenes = 100,
-                                     run_mast_fe = TRUE,
-                                     run_mast_re = TRUE,
-                                     run_deseq = TRUE,
-                                     lrt_term = "groupTreatment:timeEoT",
-                                     design_formula = ~ group * time,
-                                     design_formula_mast_rand =
-                                       ~ group * time + (1 | sampleID),
-                                     design_formula_deseq = ~ group * time) {
+pipeline_jan_and_methods <- function(
+  sce,
+  run_mast_fe = TRUE,
+  run_mast_re = TRUE,
+  run_deseq = TRUE,
+  design_formula = ~ group * time,
+  design_formula_mast_rand = ~ group * time + (1 | sampleID),
+  design_formula_deseq = ~ group * time,
+  lrt_term = "groupTreatment:timeEoT",
+  lrt_term_deseq = "groupTreatment.timeEoT",
+  relevel = list(group = "Placebo", time = "Baseline"),
+  filter = FALSE
+) {
   jan_results <- run_methods(
     sce = sce,
     sample_var = "sampleID",
@@ -412,27 +512,33 @@ pipeline_jan_and_methods <- function(sce,
     design_formula_mast_rand = design_formula_mast_rand,
     design_formula_deseq = design_formula_deseq,
     lrt_term = lrt_term,
+    lrt_term_deseq = lrt_term_deseq,
     ids_vars = c("subjectID", "time"),
+    relevel = list(group = "Placebo", time = "Baseline"),
     run_mast_fe = run_mast_fe,
     run_mast_re = run_mast_re,
-    run_deseq = run_deseq
+    run_deseq = run_deseq,
+    filter = filter
   )
+
   jan_results
 }
 
-## rescueSim pipeline with methods ---------------------------------------------
-pipeline_rescue_and_methods <- function(sce,
-                                        nSubjsPerGroup = 5,
-                                        run_mast = TRUE,
-                                        run_mast_ran = TRUE,
-                                        run_deseq = TRUE,
-                                        lrt_term = "groupTreatment:timeEoT",
-                                        design_formula_mast =
-                                          ~ group * time,
-                                        design_formula_mast_rand =
-                                          ~  group * time + (1 | sampleID),
-                                        design_formula_deseq = ~ group * time) {
 
+## rescueSim pipeline with methods ---------------------------------------------
+pipeline_rescue_and_methods <- function(
+  sce,
+  run_mast = TRUE,
+  run_mast_ran = TRUE,
+  run_deseq = TRUE,
+  design_formula_mast = ~ group * time,
+  design_formula_mast_rand = ~ group * time + (1 | sampleID),
+  design_formula_deseq = ~ group * time,
+  lrt_term = "groupTreatment:timeEoT",
+  lrt_term_deseq = "groupTreatment.timeEoT",
+  relevel = list(group = "Placebo", time = "Baseline"),
+  filter = FALSE
+) {
   rescue_results <- run_methods(
     sce = sce,
     sample_var = "sampleID",
@@ -440,16 +546,17 @@ pipeline_rescue_and_methods <- function(sce,
     design_formula_mast_rand = design_formula_mast_rand,
     design_formula_deseq = design_formula_deseq,
     lrt_term = lrt_term,
+    lrt_term_deseq = lrt_term_deseq,
     ids_vars = c("subjectID", "time"),
+    relevel = list(group = "Placebo", time = "Baseline"),
     run_mast_fe = run_mast,
     run_mast_re = run_mast_ran,
-    run_deseq = run_deseq
+    run_deseq = run_deseq,
+    filter = filter
   )
+
   rescue_results
 }
-
-
-
 
 
 # Run Simulations  -------------------------------------------------------------
@@ -460,6 +567,10 @@ simulation <- pins::pin_read(board, "simulations")
 sim_splatpop <- simulation$splatpop
 sim_jan <- simulation$jan
 sim_rescue <- simulation$rescueSim
+sim_rescue_123 <- simulation$rescueSim_123
+sim_rescue_111 <- simulation$rescueSim_111
+sim_rescue_222 <- simulation$rescueSim_222
+sim_rescue_333 <- simulation$rescueSim_333
 
 
 ## SplatPop --------------------------------------------------------------------
@@ -467,307 +578,745 @@ splatpop_out <- pipeline_splatpop_and_methods(sce = sim_splatpop)
 
 
 ## Jan -------------------------------------------------------------------------
-jan_out <- pipeline_jan_and_methods(sce = sim_jan)
-# jan_out2 <- pipeline_jan_and_methods(sce = sim_jan,
-#                                      run_mast_fe = FALSE,
-#                                      run_mast_re = TRUE,
-#                                      run_deseq = FALSE,
-#                                      design_formula_mast_rand =
-#                                        ~  time + group:time +
-#                                        (1 | subjectID:sampleID) + (1|sampleID),
-#                                      lrt_term = "timeEoT:groupTreatment")
-jan_out3 <- pipeline_jan_and_methods(sce = sim_jan,
-                                     run_mast_fe = FALSE,
-                                     run_mast_re = TRUE,
-                                     run_deseq = FALSE,
-                                     design_formula_mast_rand =
-                                       ~ group*time +
-                                       (1|subjectID),
-                                     lrt_term = "groupTreatment:timeEoT")
+### Define other dataframes ( columns in another way) --------------------------
 
+# WHEN THERE IS NO GROUP FACTOR
+sim_jan_ref <- sim_jan
+cd <- SummarizedExperiment::colData(sim_jan_ref)
+cd$time <- relevel(cd$time, ref = "EoT")
+SummarizedExperiment::colData(sim_jan_ref) <- cd
 
-# Create is.time and is.grouptime indicators for fixed effect model
+# CODED TIME AND TIME.GROUP , 0NLY 0 AND 1S
 sim_jan_mod <- sim_jan
 cd <- as.data.frame(SummarizedExperiment::colData(sim_jan_mod))
 cd$is.time <- ifelse(cd$time == "EoT", 1, 0)
 cd$is.grouptime <- ifelse(cd$group == "Treatment" & cd$time == "EoT", 1, 0)
 SummarizedExperiment::colData(sim_jan_mod) <- S4Vectors::DataFrame(cd)
-jan_out4 <- pipeline_jan_and_methods(sce = sim_jan_mod,
-                                     run_mast_fe = TRUE,
-                                     run_mast_re = FALSE,
-                                     run_deseq = FALSE,
-                                     design_formula =
-                                       ~  is.time + is.grouptime + subjectID,
-                                     lrt_term = "is.grouptime")
 
-jan_out5 <- pipeline_jan_and_methods(sce = sim_jan_mod,
-                                     run_mast_fe = FALSE,
-                                     run_mast_re = TRUE,
-                                     run_deseq = FALSE,
-                                     design_formula_mast_rand =
-                                       ~  is.time + is.grouptime +
-                                       (1|sampleID) + (1|subjectID),
-                                     lrt_term = "is.grouptime")
-jan_out6 <- pipeline_jan_and_methods(sce = sim_jan_mod,
-                                     run_mast_fe = FALSE,
-                                     run_mast_re = FALSE,
-                                     run_deseq = TRUE,
-                                     design_formula_deseq =
-                                       ~  is.time + is.grouptime + subjectID,
-                                     lrt_term = "is.grouptime")
+### Run different versions of the pipeline -------------------------------------
+jan_out <- pipeline_jan_and_methods(sce = sim_jan)
+
+#### MAST fixed only -----------------------------------------------------------
+jan_out7 <- pipeline_jan_and_methods(
+  sce = sim_jan_ref,
+  run_mast_fe = TRUE,
+  run_mast_re = FALSE,
+  run_deseq = FALSE,
+  design_formula =
+    ~ time + group:time + subjectID,
+  lrt_term = "timeEoT:groupTreatment"
+)
+
+jan_out12 <- pipeline_jan_and_methods(
+  sce = sim_jan,
+  run_mast_fe = TRUE,
+  run_mast_re = FALSE,
+  run_deseq = FALSE,
+  design_formula =
+    ~ group * time + subjectID,
+  lrt_term = "groupTreatment:timeEoT"
+)
+#### MAST random only ----------------------------------------------------------
+
+jan_out3 <- pipeline_jan_and_methods(
+  sce = sim_jan,
+  run_mast_fe = FALSE,
+  run_mast_re = TRUE,
+  run_deseq = FALSE,
+  design_formula_mast_rand =
+    ~ group * time +
+      (1 | subjectID),
+  lrt_term = "groupTreatment:timeEoT"
+)
+
+jan_out8 <- pipeline_jan_and_methods(
+  sce = sim_jan_ref,
+  run_mast_fe = FALSE,
+  run_mast_re = TRUE,
+  run_deseq = FALSE,
+  design_formula_mast_rand =
+    ~ time + group:time +
+      (1 | sampleID) + (1 | subjectID),
+  lrt_term = "timeEoT:groupTreatment"
+)
+
+jan_out9 <- pipeline_jan_and_methods(
+  sce = sim_jan_ref,
+  run_mast_fe = FALSE,
+  run_mast_re = TRUE,
+  run_deseq = FALSE,
+  design_formula_mast_rand =
+    ~ time + group:time + subjectID
+      + (1 | sampleID),
+  lrt_term = "timeEoT:groupTreatment"
+)
+
+jan_out11 <- pipeline_jan_and_methods(
+  sce = sim_jan,
+  run_mast_fe = FALSE,
+  run_mast_re = TRUE,
+  run_deseq = FALSE,
+  design_formula_mast_rand =
+    ~ group * time + subjectID +
+      (1 | sampleID),
+  lrt_term = "groupTreatment:timeEoT"
+)
+#### DESeq only ----------------------------------------------------------------
+jan_out6 <- pipeline_jan_and_methods(
+  sce = sim_jan_mod,
+  run_mast_fe = FALSE,
+  run_mast_re = FALSE,
+  run_deseq = TRUE,
+  design_formula_deseq = ~ is.time + is.grouptime + subjectID,
+  lrt_term_deseq = "is.grouptime",
+  relevel = NULL
+)
+
+jan_out10 <- pipeline_jan_and_methods(
+  sce = sim_jan_ref,
+  run_mast_fe = FALSE,
+  run_mast_re = FALSE,
+  run_deseq = TRUE,
+  design_formula_deseq = ~ time + group:time,
+  lrt_term_deseq = "timeEoT.groupTreatment",
+  relevel = list(group = "Placebo", time = "Baseline")
+)
 
 
-sim_jan_ref <- sim_jan
-cd <- SummarizedExperiment::colData(sim_jan_ref)
-cd$time <- relevel(cd$time, ref = "EoT")
-#
-#
-# cd$time  <- factor(cd$time,  levels = c("Baseline", "EoT"))
-# cd$group <- factor(cd$group, levels = c("Placebo", "Treatment"))
-#
-# # Force the contrasts explicitly
-# contrasts(cd$time)  <- contr.treatment(2, base = 1)  # Baseline ref -> timeEoT
-# contrasts(cd$group) <- contr.treatment(2, base = 1)  # Placebo ref  -> groupTreatment
-#
-cd$Time <- NULL
-cd$Treatment <- NULL
-cd$Cell <- NULL   # optional but recommended
-cd$Subject <- NULL
+#### Commented ones ------------------------------------------------------------
+# jan_out13 <- pipeline_jan_and_methods(
+#   sce = sim_jan,
+#   run_mast_fe = FALSE,
+#   run_mast_re = FALSE,
+#   run_deseq = TRUE,
+#   design_formula_deseq = ~ subjectID +  time + group:time,
+#   filter = TRUE,
+#   lrt_term_deseq = "groupTreatment.timeEoT",
+#   relevel = list(group = "Placebo", time = "Baseline")
+# )
+# jan_out4 <- pipeline_jan_and_methods(
+#   sce = sim_jan_mod,
+#   run_mast_fe = TRUE,
+#   run_mast_re = FALSE,
+#   run_deseq = FALSE,
+#   design_formula =
+#     ~ is.time + is.grouptime + subjectID,
+#   lrt_term = "is.grouptime"
+# )
 
-SummarizedExperiment::colData(sim_jan_ref) <- cd
-
-jan_out7 <- pipeline_jan_and_methods(sce = sim_jan_ref,
-                                         run_mast_fe = TRUE,
-                                         run_mast_re = FALSE,
-                                         run_deseq = FALSE,
-                                         design_formula =
-                                           ~  time + group:time + subjectID,
-                                         lrt_term = "timeEoT:groupTreatment")
-
-jan_out8 <- pipeline_jan_and_methods(sce =sim_jan_ref,
-                                         run_mast_fe = FALSE,
-                                         run_mast_re = TRUE,
-                                         run_deseq = FALSE,
-                                         design_formula_mast_rand =
-                                           ~  time + group:time +
-                                           (1|sampleID) + (1|subjectID),
-                                         lrt_term = "timeEoT:groupTreatment")
-jan_out9 <- pipeline_jan_and_methods(sce = sim_jan_ref,
-                                         run_mast_fe = FALSE,
-                                         run_mast_re = TRUE,
-                                         run_deseq = FALSE,
-                                         design_formula_mast_rand =
-                                           ~ time + group:time + subjectID
-                                         + (1|sampleID),
-                                         lrt_term = "timeEoT:groupTreatment")
-
-jan_out10 <- pipeline_jan_and_methods(sce = sim_jan_ref,
-                                     run_mast_fe = FALSE,
-                                     run_mast_re = FALSE,
-                                     run_deseq = TRUE,
-                                     design_formula_deseq =
-                                       ~  time + group:time,
-                                     lrt_term = "timeEoT:groupTreatment")
-
-
-jan_out11 <- pipeline_jan_and_methods(sce = sim_jan,
-                                     run_mast_fe = FALSE,
-                                     run_mast_re = TRUE,
-                                     run_deseq = FALSE,
-                                     design_formula_mast_rand =
-                                       ~ group*time + subjectID +
-                                       (1|sampleID),
-                                     lrt_term = "groupTreatment:timeEoT")
-
-
-jan_out12 <- pipeline_jan_and_methods(sce = sim_jan,
-                                     run_mast_fe = TRUE,
-                                     run_mast_re = FALSE,
-                                     run_deseq = FALSE,
-                                     design_formula =
-                                       ~  group*time + subjectID,
-                                     lrt_term = "is.grouptime")
-jan_out13 <- pipeline_jan_and_methods(sce = sim_jan,
-                                      run_mast_fe = FALSE,
-                                      run_mast_re = FALSE,
-                                      run_deseq = TRUE,
-                                      design_formula_deseq =
-                                        ~ subjectID + group*time,
-                                      lrt_term = "timeEoT:groupTreatment")
+# jan_out5 <- pipeline_jan_and_methods(
+#   sce = sim_jan_mod,
+#   run_mast_fe = FALSE,
+#   run_mast_re = TRUE,
+#   run_deseq = FALSE,
+#   design_formula_mast_rand =
+#     ~ is.time + is.grouptime +
+#       (1 | sampleID) + (1 | subjectID),
+#   lrt_term = "is.grouptime"
+# )
 
 
 ##  rescueSim ------------------------------------------------------------------
-resc_out <- pipeline_rescue_and_methods(sce = sim_rescue)
-# res_out2 <- pipeline_rescue_and_methods(sce = sim_rescue,
-#                                         run_mast = FALSE,
-#                                         run_mast_ran = TRUE,
-#                                         run_deseq = FALSE,
-#                                         design_formula_mast_rand =
-#                                           ~  time + group:time +
-#                                           (1 | subjectID:sampleID) +
-#                                           (1|sampleID),
-#                                         lrt_term = "timeEoT:groupTreatment")
-
-res_out3 <- pipeline_rescue_and_methods(sce = sim_rescue,
-                                        run_mast = FALSE,
-                                        run_mast_ran = TRUE,
-                                        run_deseq = FALSE,
-                                        design_formula_mast_rand =
-                                          ~  group*time +
-                                          (1|subjectID),
-                                        lrt_term = "groupTreatment:timeEoT")
-sim_rescue_ref <- sim_rescue
-cd <- SummarizedExperiment::colData(sim_rescue_ref)
-
-cd$time  <- factor(cd$time,  levels = c("Baseline", "EoT"))
-cd$group <- factor(cd$group, levels = c("Placebo", "Treatment"))
-
-# Force the contrasts explicitly
-contrasts(cd$time)  <- contr.treatment(2, base = 1)  # Baseline ref -> timeEoT
-contrasts(cd$group) <- contr.treatment(2, base = 1)  # Placebo ref  -> groupTreatment
-
-SummarizedExperiment::colData(sim_rescue_ref) <- cd
-
+### Define other dataframes ( columns in another way) --------------------------
+# WHEN THERE IS NO GROUP FACTOR
 sim_rescue_ref <- sim_rescue
 cd <- SummarizedExperiment::colData(sim_rescue_ref)
 cd$time <- relevel(cd$time, ref = "EoT")
-#
-#
-# cd$time  <- factor(cd$time,  levels = c("Baseline", "EoT"))
-# cd$group <- factor(cd$group, levels = c("Placebo", "Treatment"))
-#
-# # Force the contrasts explicitly
-# contrasts(cd$time)  <- contr.treatment(2, base = 1)  # Baseline ref -> timeEoT
-# contrasts(cd$group) <- contr.treatment(2, base = 1)  # Placebo ref  -> groupTreatment
-#
-cd$Time <- NULL
-cd$Treatment <- NULL
-cd$Cell <- NULL   # optional but recommended
-cd$Subject <- NULL
 
 SummarizedExperiment::colData(sim_rescue_ref) <- cd
-
-resc_out4 <- pipeline_rescue_and_methods(sce = sim_rescue_ref,
-                                     run_mast = TRUE,
-                                     run_mast_ran = FALSE,
-                                     run_deseq = FALSE,
-                                     design_formula_mast =
-                                       ~  time + group:time + subjectID,
-                                     lrt_term = "timeEoT:groupTreatment")
-# Create is.time and is.grouptime indicators for fixed effect model
+# CODED TIME AND TIME.GROUP , 0NLY 0 AND 1S
 sim_rescue_mod <- sim_rescue
 cd <- as.data.frame(SummarizedExperiment::colData(sim_rescue_mod))
 cd$is.time <- ifelse(cd$time == "EoT", 1, 0)
 cd$is.grouptime <- ifelse(cd$group == "Treatment" & cd$time == "EoT", 1, 0)
 SummarizedExperiment::colData(sim_rescue_mod) <- S4Vectors::DataFrame(cd)
-resc_out5 <-  pipeline_rescue_and_methods(sce = sim_rescue_mod,
-                                     run_mast = TRUE,
-                                     run_mast_ran = FALSE,
-                                     run_deseq = FALSE,
-                                     design_formula_mast =
-                                       ~  is.time + is.grouptime + subjectID,
-                                     lrt_term = "is.grouptime")
 
-resc_out6 <- pipeline_rescue_and_methods(sce = sim_rescue_mod,
-                                     run_mast = FALSE,
-                                     run_mast_ran = FALSE,
-                                     run_deseq = TRUE,
-                                     design_formula_deseq =
-                                       ~  is.time + is.grouptime + subjectID,
-                                     lrt_term = "is.grouptime")
-resc_out7 <- pipeline_rescue_and_methods(sce = sim_rescue_mod,
-                                        run_mast = FALSE,
-                                        run_mast_ran = TRUE,
-                                        run_deseq = FALSE,
-                                        design_formula_mast_rand =
-                                          ~  is.time + is.grouptime +
-                                          (1|sampleID),
-                                        lrt_term = "is.grouptime")
-resc_out8 <- pipeline_rescue_and_methods(sce = sim_rescue_mod,
-                                         run_mast = FALSE,
-                                         run_mast_ran = TRUE,
-                                         run_deseq = FALSE,
-                                         design_formula_mast_rand =
-                                           ~  is.time + is.grouptime +
-                                           (1|sampleID) + (1|subjectID),
-                                         lrt_term = "is.grouptime")
-resc_out9 <- pipeline_rescue_and_methods(sce = sim_rescue_mod,
-                                         run_mast = FALSE,
-                                         run_mast_ran = TRUE,
-                                         run_deseq = FALSE,
-                                         design_formula_mast_rand =
-                                           ~  is.time + is.grouptime + subjectID
-                                           + (1|sampleID),
-                                         lrt_term = "is.grouptime")
+### Run different versions of the pipeline -------------------------------------
+
+resc_out <- pipeline_rescue_and_methods(sce = sim_rescue)
+
+#### MAST fixed only -----------------------------------------------------------
+resc_out4 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_ref,
+  run_mast = TRUE,
+  run_mast_ran = FALSE,
+  run_deseq = FALSE,
+  design_formula_mast =
+    ~ time + group:time + subjectID,
+  lrt_term = "timeEoT:groupTreatment"
+)
+
+resc_out15 <- pipeline_rescue_and_methods(
+  sce = sim_rescue,
+  run_mast = TRUE,
+  run_mast_ran = FALSE,
+  run_deseq = FALSE,
+  design_formula_mast =
+    ~ group * time + subjectID,
+  lrt_term = "groupTreatment:timeEoT"
+)
+
+#### MAST random only ----------------------------------------------------------
+res_out3 <- pipeline_rescue_and_methods(
+  sce = sim_rescue,
+  run_mast = FALSE,
+  run_mast_ran = TRUE,
+  run_deseq = FALSE,
+  design_formula_mast_rand =
+    ~ group * time +
+      (1 | subjectID),
+  lrt_term = "groupTreatment:timeEoT"
+)
+
+resc_out11 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_ref,
+  run_mast = FALSE,
+  run_mast_ran = TRUE,
+  run_deseq = FALSE,
+  design_formula_mast_rand =
+    ~ time + group:time +
+      (1 | sampleID) + (1 | subjectID),
+  lrt_term = "timeEoT:groupTreatment"
+)
+resc_out12 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_ref,
+  run_mast = FALSE,
+  run_mast_ran = TRUE,
+  run_deseq = FALSE,
+  design_formula_mast_rand =
+    ~ time + group:time + subjectID +
+      (1 | sampleID),
+  lrt_term = "timeEoT:groupTreatment"
+)
+resc_out14 <- pipeline_rescue_and_methods(
+  sce = sim_rescue,
+  run_mast = FALSE,
+  run_mast_ran = TRUE,
+  run_deseq = FALSE,
+  design_formula_mast_rand =
+    ~ group * time + subjectID +
+      (1 | sampleID),
+  lrt_term = "groupTreatment:timeEoT"
+)
+
+#### DESeq only ----------------------------------------------------------------
+
+resc_out6 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_mod,
+  run_mast = FALSE,
+  run_mast_ran = FALSE,
+  run_deseq = TRUE,
+  design_formula_deseq = ~ is.time + is.grouptime + subjectID,
+  lrt_term_deseq = "is.grouptime",
+  relevel = NULL
+)
+
+resc_out10 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_ref,
+  run_mast = FALSE,
+  run_mast_ran = FALSE,
+  run_deseq = TRUE,
+  design_formula_deseq = ~ time + group:time,
+  lrt_term_deseq = "timeEoT.groupTreatment",
+  relevel = list(group = "Placebo", time = "Baseline")
+)
 
 
-resc_out10 <- pipeline_rescue_and_methods(sce = sim_rescue_ref,
-                                         run_mast = FALSE,
-                                         run_mast_ran = FALSE,
-                                         run_deseq = TRUE,
-                                         design_formula_deseq =
-                                           ~  time + group:time,
-                                         lrt_term = "timeEoT:groupTreatment")
-
-resc_out11 <- pipeline_rescue_and_methods(sce = sim_rescue_ref,
-                                         run_mast = FALSE,
-                                         run_mast_ran = TRUE,
-                                         run_deseq = FALSE,
-                                         design_formula_mast_rand =
-                                           ~  time + group:time +
-                                           (1|sampleID) + (1|subjectID),
-                                         lrt_term = "timeEoT:groupTreatment")
+#### Commented -----------------------------------------------------------------
+# resc_out13 <- pipeline_rescue_and_methods(
+#   sce = sim_rescue,
+#   run_mast = FALSE,
+#   run_mast_ran = FALSE,
+#   run_deseq = TRUE,
+#   design_formula_deseq = ~ group * time + subjectID,
+#   lrt_term_deseq = "groupTreatment.timeEoT",
+#   relevel = list(group = "Placebo", time = "Baseline")
+# )
 
 
-resc_out12 <- pipeline_rescue_and_methods(sce = sim_rescue_ref,
-                                          run_mast = FALSE,
-                                          run_mast_ran = TRUE,
-                                          run_deseq = FALSE,
-                                          design_formula_mast_rand =
-                                            ~  time + group:time + subjectID +
-                                            (1|sampleID),
-                                          lrt_term = "timeEoT:groupTreatment")
-resc_out13 <- pipeline_rescue_and_methods(sce = sim_rescue,
-                                          run_mast = FALSE,
-                                          run_mast_ran = FALSE,
-                                          run_deseq = TRUE,
-                                          design_formula_deseq =
-                                            ~  group*time + subjectID,
-                                          lrt_term = "timeEoT:groupTreatment")
-resc_out14 <- pipeline_rescue_and_methods(sce = sim_rescue,
-                                        run_mast = FALSE,
-                                        run_mast_ran = TRUE,
-                                        run_deseq = FALSE,
-                                        design_formula_mast_rand =
-                                          ~  group*time + subjectID +
-                                          (1|sampleID),
-                                        lrt_term = "groupTreatment:timeEoT")
-resc_out15 <- pipeline_rescue_and_methods(sce = sim_rescue,
-                                        run_mast = TRUE,
-                                        run_mast_ran = FALSE,
-                                        run_deseq = FALSE,
-                                        design_formula_mast =
-                                          ~  group*time + subjectID,
-                                        lrt_term = "groupTreatment:timeEoT")
+# resc_out5 <- pipeline_rescue_and_methods(
+#   sce = sim_rescue_mod,
+#   run_mast = TRUE,
+#   run_mast_ran = FALSE,
+#   run_deseq = FALSE,
+#   design_formula_mast =
+#     ~ is.time + is.grouptime + subjectID,
+#   lrt_term = "is.grouptime"
+# )
 
+
+# resc_out7 <- pipeline_rescue_and_methods(
+#   sce = sim_rescue_mod,
+#   run_mast = FALSE,
+#   run_mast_ran = TRUE,
+#   run_deseq = FALSE,
+#   design_formula_mast_rand =
+#     ~ is.time + is.grouptime +
+#       (1 | sampleID),
+#   lrt_term = "is.grouptime"
+# )
+# resc_out8 <- pipeline_rescue_and_methods(
+#   sce = sim_rescue_mod,
+#   run_mast = FALSE,
+#   run_mast_ran = TRUE,
+#   run_deseq = FALSE,
+#   design_formula_mast_rand =
+#     ~ is.time + is.grouptime +
+#       (1 | sampleID) + (1 | subjectID),
+#   lrt_term = "is.grouptime"
+# )
+# resc_out9 <- pipeline_rescue_and_methods(
+#   sce = sim_rescue_mod,
+#   run_mast = FALSE,
+#   run_mast_ran = TRUE,
+#   run_deseq = FALSE,
+#   design_formula_mast_rand =
+#     ~ is.time + is.grouptime + subjectID
+#       + (1 | sampleID),
+#   lrt_term = "is.grouptime"
+# )
+
+
+##  rescueSim 123 --------------------------------------------------------------
+### Define other dataframes ( columns in another way) --------------------------
+# WHEN THERE IS NO GROUP FACTOR
+sim_rescue_ref_123 <- sim_rescue_123
+cd <- SummarizedExperiment::colData(sim_rescue_ref_123)
+cd$time <- relevel(cd$time, ref = "EoT")
+
+SummarizedExperiment::colData(sim_rescue_ref_123) <- cd
+# CODED TIME AND TIME.GROUP , 0NLY 0 AND 1S
+sim_rescue_mod_123 <- sim_rescue_123
+cd <- as.data.frame(SummarizedExperiment::colData(sim_rescue_mod_123))
+cd$is.time <- ifelse(cd$time == "EoT", 1, 0)
+cd$is.grouptime <- ifelse(cd$group == "Treatment" & cd$time == "EoT", 1, 0)
+SummarizedExperiment::colData(sim_rescue_mod_123) <- S4Vectors::DataFrame(cd)
+
+### Run different versions of the pipeline -------------------------------------
+
+resc_out_123 <- pipeline_rescue_and_methods(sce = sim_rescue_123)
+
+#### MAST fixed only -----------------------------------------------------------
+resc_out_123_4 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_ref_123,
+  run_mast = TRUE,
+  run_mast_ran = FALSE,
+  run_deseq = FALSE,
+  design_formula_mast =
+    ~ time + group:time + subjectID,
+  lrt_term = "timeEoT:groupTreatment"
+)
+
+resc_out_123_15 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_123,
+  run_mast = TRUE,
+  run_mast_ran = FALSE,
+  run_deseq = FALSE,
+  design_formula_mast =
+    ~ group * time + subjectID,
+  lrt_term = "groupTreatment:timeEoT"
+)
+
+#### MAST random only ----------------------------------------------------------
+resc_out_123_3 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_123,
+  run_mast = FALSE,
+  run_mast_ran = TRUE,
+  run_deseq = FALSE,
+  design_formula_mast_rand =
+    ~ group * time +
+      (1 | subjectID),
+  lrt_term = "groupTreatment:timeEoT"
+)
+
+resc_out_123_11 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_ref_123,
+  run_mast = FALSE,
+  run_mast_ran = TRUE,
+  run_deseq = FALSE,
+  design_formula_mast_rand =
+    ~ time + group:time +
+      (1 | sampleID) + (1 | subjectID),
+  lrt_term = "timeEoT:groupTreatment"
+)
+resc_out_123_12 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_ref_123,
+  run_mast = FALSE,
+  run_mast_ran = TRUE,
+  run_deseq = FALSE,
+  design_formula_mast_rand =
+    ~ time + group:time + subjectID +
+      (1 | sampleID),
+  lrt_term = "timeEoT:groupTreatment"
+)
+resc_out_123_14 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_123,
+  run_mast = FALSE,
+  run_mast_ran = TRUE,
+  run_deseq = FALSE,
+  design_formula_mast_rand =
+    ~ group * time + subjectID +
+      (1 | sampleID),
+  lrt_term = "groupTreatment:timeEoT"
+)
+
+#### DESeq only ----------------------------------------------------------------
+
+resc_out_123_6 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_mod_123,
+  run_mast = FALSE,
+  run_mast_ran = FALSE,
+  run_deseq = TRUE,
+  design_formula_deseq = ~ is.time + is.grouptime + subjectID,
+  lrt_term_deseq = "is.grouptime",
+  relevel = NULL
+)
+
+resc_out_123_10 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_ref_123,
+  run_mast = FALSE,
+  run_mast_ran = FALSE,
+  run_deseq = TRUE,
+  design_formula_deseq = ~ time + group:time,
+  lrt_term_deseq = "timeEoT.groupTreatment",
+  relevel = list(group = "Placebo", time = "Baseline")
+)
+
+
+##  rescueSim 111 --------------------------------------------------------------
+### Define other dataframes ( columns in another way) --------------------------
+# WHEN THERE IS NO GROUP FACTOR
+sim_rescue_ref_111 <- sim_rescue_111
+cd <- SummarizedExperiment::colData(sim_rescue_ref_111)
+cd$time <- relevel(cd$time, ref = "EoT")
+
+SummarizedExperiment::colData(sim_rescue_ref_111) <- cd
+# CODED TIME AND TIME.GROUP , 0NLY 0 AND 1S
+sim_rescue_mod_111 <- sim_rescue_111
+cd <- as.data.frame(SummarizedExperiment::colData(sim_rescue_mod_111))
+cd$is.time <- ifelse(cd$time == "EoT", 1, 0)
+cd$is.grouptime <- ifelse(cd$group == "Treatment" & cd$time == "EoT", 1, 0)
+SummarizedExperiment::colData(sim_rescue_mod_111) <- S4Vectors::DataFrame(cd)
+
+### Run different versions of the pipeline -------------------------------------
+
+resc_out_111 <- pipeline_rescue_and_methods(sce = sim_rescue_111)
+
+#### MAST fixed only -----------------------------------------------------------
+resc_out_111_4 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_ref_111,
+  run_mast = TRUE,
+  run_mast_ran = FALSE,
+  run_deseq = FALSE,
+  design_formula_mast =
+    ~ time + group:time + subjectID,
+  lrt_term = "timeEoT:groupTreatment"
+)
+
+resc_out_111_15 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_111,
+  run_mast = TRUE,
+  run_mast_ran = FALSE,
+  run_deseq = FALSE,
+  design_formula_mast =
+    ~ group * time + subjectID,
+  lrt_term = "groupTreatment:timeEoT"
+)
+
+#### MAST random only ----------------------------------------------------------
+resc_out_111_3 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_111,
+  run_mast = FALSE,
+  run_mast_ran = TRUE,
+  run_deseq = FALSE,
+  design_formula_mast_rand =
+    ~ group * time +
+      (1 | subjectID),
+  lrt_term = "groupTreatment:timeEoT"
+)
+
+resc_out_111_11 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_ref_111,
+  run_mast = FALSE,
+  run_mast_ran = TRUE,
+  run_deseq = FALSE,
+  design_formula_mast_rand =
+    ~ time + group:time +
+      (1 | sampleID) + (1 | subjectID),
+  lrt_term = "timeEoT:groupTreatment"
+)
+resc_out_111_12 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_ref_111,
+  run_mast = FALSE,
+  run_mast_ran = TRUE,
+  run_deseq = FALSE,
+  design_formula_mast_rand =
+    ~ time + group:time + subjectID +
+      (1 | sampleID),
+  lrt_term = "timeEoT:groupTreatment"
+)
+resc_out_111_14 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_111,
+  run_mast = FALSE,
+  run_mast_ran = TRUE,
+  run_deseq = FALSE,
+  design_formula_mast_rand =
+    ~ group * time + subjectID +
+      (1 | sampleID),
+  lrt_term = "groupTreatment:timeEoT"
+)
+
+#### DESeq only ----------------------------------------------------------------
+
+resc_out_111_6 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_mod_111,
+  run_mast = FALSE,
+  run_mast_ran = FALSE,
+  run_deseq = TRUE,
+  design_formula_deseq = ~ is.time + is.grouptime + subjectID,
+  lrt_term_deseq = "is.grouptime",
+  relevel = NULL
+)
+
+resc_out_111_10 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_ref_111,
+  run_mast = FALSE,
+  run_mast_ran = FALSE,
+  run_deseq = TRUE,
+  design_formula_deseq = ~ time + group:time,
+  lrt_term_deseq = "timeEoT.groupTreatment",
+  relevel = list(group = "Placebo", time = "Baseline")
+)
+
+
+##  rescueSim 222 --------------------------------------------------------------
+### Define other dataframes ( columns in another way) --------------------------
+# WHEN THERE IS NO GROUP FACTOR
+sim_rescue_ref_222 <- sim_rescue_222
+cd <- SummarizedExperiment::colData(sim_rescue_ref_222)
+cd$time <- relevel(cd$time, ref = "EoT")
+
+SummarizedExperiment::colData(sim_rescue_ref_222) <- cd
+# CODED TIME AND TIME.GROUP , 0NLY 0 AND 1S
+sim_rescue_mod_222 <- sim_rescue_222
+cd <- as.data.frame(SummarizedExperiment::colData(sim_rescue_mod_222))
+cd$is.time <- ifelse(cd$time == "EoT", 1, 0)
+cd$is.grouptime <- ifelse(cd$group == "Treatment" & cd$time == "EoT", 1, 0)
+SummarizedExperiment::colData(sim_rescue_mod_222) <- S4Vectors::DataFrame(cd)
+
+### Run different versions of the pipeline -------------------------------------
+
+resc_out_222 <- pipeline_rescue_and_methods(sce = sim_rescue_222)
+
+#### MAST fixed only -----------------------------------------------------------
+resc_out_222_4 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_ref_222,
+  run_mast = TRUE,
+  run_mast_ran = FALSE,
+  run_deseq = FALSE,
+  design_formula_mast =
+    ~ time + group:time + subjectID,
+  lrt_term = "timeEoT:groupTreatment"
+)
+
+resc_out_222_15 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_222,
+  run_mast = TRUE,
+  run_mast_ran = FALSE,
+  run_deseq = FALSE,
+  design_formula_mast =
+    ~ group * time + subjectID,
+  lrt_term = "groupTreatment:timeEoT"
+)
+
+#### MAST random only ----------------------------------------------------------
+resc_out_222_3 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_222,
+  run_mast = FALSE,
+  run_mast_ran = TRUE,
+  run_deseq = FALSE,
+  design_formula_mast_rand =
+    ~ group * time +
+      (1 | subjectID),
+  lrt_term = "groupTreatment:timeEoT"
+)
+
+resc_out_222_11 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_ref_222,
+  run_mast = FALSE,
+  run_mast_ran = TRUE,
+  run_deseq = FALSE,
+  design_formula_mast_rand =
+    ~ time + group:time +
+      (1 | sampleID) + (1 | subjectID),
+  lrt_term = "timeEoT:groupTreatment"
+)
+resc_out_222_12 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_ref_222,
+  run_mast = FALSE,
+  run_mast_ran = TRUE,
+  run_deseq = FALSE,
+  design_formula_mast_rand =
+    ~ time + group:time + subjectID +
+      (1 | sampleID),
+  lrt_term = "timeEoT:groupTreatment"
+)
+resc_out_222_14 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_222,
+  run_mast = FALSE,
+  run_mast_ran = TRUE,
+  run_deseq = FALSE,
+  design_formula_mast_rand =
+    ~ group * time + subjectID +
+      (1 | sampleID),
+  lrt_term = "groupTreatment:timeEoT"
+)
+
+#### DESeq only ----------------------------------------------------------------
+
+resc_out_222_6 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_mod_222,
+  run_mast = FALSE,
+  run_mast_ran = FALSE,
+  run_deseq = TRUE,
+  design_formula_deseq = ~ is.time + is.grouptime + subjectID,
+  lrt_term_deseq = "is.grouptime",
+  relevel = NULL
+)
+
+resc_out_222_10 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_ref_222,
+  run_mast = FALSE,
+  run_mast_ran = FALSE,
+  run_deseq = TRUE,
+  design_formula_deseq = ~ time + group:time,
+  lrt_term_deseq = "timeEoT.groupTreatment",
+  relevel = list(group = "Placebo", time = "Baseline")
+)
+
+
+##  rescueSim 333 --------------------------------------------------------------
+### Define other dataframes ( columns in another way) --------------------------
+# WHEN THERE IS NO GROUP FACTOR
+sim_rescue_ref_333 <- sim_rescue_333
+cd <- SummarizedExperiment::colData(sim_rescue_ref_333)
+cd$time <- relevel(cd$time, ref = "EoT")
+
+SummarizedExperiment::colData(sim_rescue_ref_333) <- cd
+# CODED TIME AND TIME.GROUP , 0NLY 0 AND 1S
+sim_rescue_mod_333 <- sim_rescue_333
+cd <- as.data.frame(SummarizedExperiment::colData(sim_rescue_mod_333))
+cd$is.time <- ifelse(cd$time == "EoT", 1, 0)
+cd$is.grouptime <- ifelse(cd$group == "Treatment" & cd$time == "EoT", 1, 0)
+SummarizedExperiment::colData(sim_rescue_mod_333) <- S4Vectors::DataFrame(cd)
+
+### Run different versions of the pipeline -------------------------------------
+
+resc_out_333 <- pipeline_rescue_and_methods(sce = sim_rescue_333)
+
+#### MAST fixed only -----------------------------------------------------------
+resc_out_333_4 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_ref_333,
+  run_mast = TRUE,
+  run_mast_ran = FALSE,
+  run_deseq = FALSE,
+  design_formula_mast =
+    ~ time + group:time + subjectID,
+  lrt_term = "timeEoT:groupTreatment"
+)
+
+resc_out_333_15 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_333,
+  run_mast = TRUE,
+  run_mast_ran = FALSE,
+  run_deseq = FALSE,
+  design_formula_mast =
+    ~ group * time + subjectID,
+  lrt_term = "groupTreatment:timeEoT"
+)
+
+#### MAST random only ----------------------------------------------------------
+resc_out_333_3 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_333,
+  run_mast = FALSE,
+  run_mast_ran = TRUE,
+  run_deseq = FALSE,
+  design_formula_mast_rand =
+    ~ group * time +
+      (1 | subjectID),
+  lrt_term = "groupTreatment:timeEoT"
+)
+
+resc_out_333_11 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_ref_333,
+  run_mast = FALSE,
+  run_mast_ran = TRUE,
+  run_deseq = FALSE,
+  design_formula_mast_rand =
+    ~ time + group:time +
+      (1 | sampleID) + (1 | subjectID),
+  lrt_term = "timeEoT:groupTreatment"
+)
+resc_out_333_12 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_ref_333,
+  run_mast = FALSE,
+  run_mast_ran = TRUE,
+  run_deseq = FALSE,
+  design_formula_mast_rand =
+    ~ time + group:time + subjectID +
+      (1 | sampleID),
+  lrt_term = "timeEoT:groupTreatment"
+)
+resc_out_333_14 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_333,
+  run_mast = FALSE,
+  run_mast_ran = TRUE,
+  run_deseq = FALSE,
+  design_formula_mast_rand =
+    ~ group * time + subjectID +
+      (1 | sampleID),
+  lrt_term = "groupTreatment:timeEoT"
+)
+
+#### DESeq only ----------------------------------------------------------------
+
+resc_out_333_6 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_mod_333,
+  run_mast = FALSE,
+  run_mast_ran = FALSE,
+  run_deseq = TRUE,
+  design_formula_deseq = ~ is.time + is.grouptime + subjectID,
+  lrt_term_deseq = "is.grouptime",
+  relevel = NULL
+)
+
+resc_out_333_10 <- pipeline_rescue_and_methods(
+  sce = sim_rescue_ref_333,
+  run_mast = FALSE,
+  run_mast_ran = FALSE,
+  run_deseq = TRUE,
+  design_formula_deseq = ~ time + group:time,
+  lrt_term_deseq = "timeEoT.groupTreatment",
+  relevel = list(group = "Placebo", time = "Baseline")
+)
 
 
 # Pin data ---------------------------------------------------------------------
 splatpop_out$mast_fe$analysis <- "splatpop"
 splatpop_out$mast_re$analysis <- "splatpop"
-splatpop_out$deseq$analysis   <- "splatpop"
+splatpop_out$deseq$analysis <- "splatpop"
 
-resc_out$mast_fe$analysis <- "rescueSim" #1
+resc_out$mast_fe$analysis <- "rescueSim" # 1
 resc_out$mast_re$analysis <- "rescueSim"
-resc_out$deseq$analysis   <- "rescueSim"
+resc_out$deseq$analysis <- "rescueSim"
 # res_out2$mast_re$analysis <- "rescueSim"
-res_out3$mast_re$analysis <- "rescueSim" #3
-resc_out4$mast_fe$analysis <- "rescueSim" #2
-resc_out5$mast_fe$analysis <- "rescueSim"
+res_out3$mast_re$analysis <- "rescueSim" # 3
+resc_out4$mast_fe$analysis <- "rescueSim" # 2
+# resc_out5$mast_fe$analysis <- "rescueSim"
 resc_out6$deseq$analysis <- "rescueSim"
-resc_out7$mast_re$analysis <- "rescueSim"
-resc_out8$mast_re$analysis <- "rescueSim"
-resc_out9$mast_re$analysis <- "rescueSim"
+# resc_out7$mast_re$analysis <- "rescueSim"
+# resc_out8$mast_re$analysis <- "rescueSim"
+# resc_out9$mast_re$analysis <- "rescueSim"
 resc_out10$deseq$analysis <- "rescueSim"
 resc_out11$mast_re$analysis <- "rescueSim"
 resc_out12$mast_re$analysis <- "rescueSim"
@@ -775,37 +1324,103 @@ resc_out12$mast_re$analysis <- "rescueSim"
 resc_out14$mast_re$analysis <- "rescueSim"
 resc_out15$mast_fe$analysis <- "rescueSim"
 
-jan_out$mast_fe$analysis  <- "jan"
-jan_out$mast_re$analysis  <- "jan"
-jan_out$deseq$analysis    <- "jan"
+
+resc_out_123$mast_fe$analysis <- "rescueSim (123)"
+resc_out_123$mast_re$analysis <- "rescueSim (123)"
+resc_out_123$deseq$analysis <- "rescueSim (123)"
+resc_out_123_3$mast_re$analysis <- "rescueSim (123)"
+resc_out_123_4$mast_fe$analysis <- "rescueSim (123)"
+resc_out_123_6$deseq$analysis <- "rescueSim (123)"
+resc_out_123_10$deseq$analysis <- "rescueSim (123)"
+resc_out_123_11$mast_re$analysis <- "rescueSim (123)"
+resc_out_123_12$mast_re$analysis <- "rescueSim (123)"
+resc_out_123_14$mast_re$analysis <- "rescueSim (123)"
+resc_out_123_15$mast_fe$analysis <- "rescueSim (123)"
+
+resc_out_111$mast_fe$analysis <- "rescueSim (111)"
+resc_out_111$mast_re$analysis <- "rescueSim (111)"
+resc_out_111$deseq$analysis <- "rescueSim (111)"
+resc_out_111_3$mast_re$analysis <- "rescueSim (111)"
+resc_out_111_4$mast_fe$analysis <- "rescueSim (111)"
+resc_out_111_6$deseq$analysis <- "rescueSim (111)"
+resc_out_111_10$deseq$analysis <- "rescueSim (111)"
+resc_out_111_11$mast_re$analysis <- "rescueSim (111)"
+resc_out_111_12$mast_re$analysis <- "rescueSim (111)"
+resc_out_111_14$mast_re$analysis <- "rescueSim (111)"
+resc_out_111_15$mast_fe$analysis <- "rescueSim (111)"
+
+
+resc_out_222$mast_fe$analysis <- "rescueSim (222)"
+resc_out_222$mast_re$analysis <- "rescueSim (222)"
+resc_out_222$deseq$analysis <- "rescueSim (222)"
+resc_out_222_3$mast_re$analysis <- "rescueSim (222)"
+resc_out_222_4$mast_fe$analysis <- "rescueSim (222)"
+resc_out_222_6$deseq$analysis <- "rescueSim (222)"
+resc_out_222_10$deseq$analysis <- "rescueSim (222)"
+resc_out_222_11$mast_re$analysis <- "rescueSim (222)"
+resc_out_222_12$mast_re$analysis <- "rescueSim (222)"
+resc_out_222_14$mast_re$analysis <- "rescueSim (222)"
+resc_out_222_15$mast_fe$analysis <- "rescueSim (222)"
+
+resc_out_333$mast_fe$analysis <- "rescueSim (333)"
+resc_out_333$mast_re$analysis <- "rescueSim (333)"
+resc_out_333$deseq$analysis <- "rescueSim (333)"
+resc_out_333_3$mast_re$analysis <- "rescueSim (333)"
+resc_out_333_4$mast_fe$analysis <- "rescueSim (333)"
+resc_out_333_6$deseq$analysis <- "rescueSim (333)"
+resc_out_333_10$deseq$analysis <- "rescueSim (333)"
+resc_out_333_11$mast_re$analysis <- "rescueSim (333)"
+resc_out_333_12$mast_re$analysis <- "rescueSim (333)"
+resc_out_333_14$mast_re$analysis <- "rescueSim (333)"
+resc_out_333_15$mast_fe$analysis <- "rescueSim (333)"
+
+
+jan_out$mast_fe$analysis <- "jan"
+jan_out$mast_re$analysis <- "jan"
+jan_out$deseq$analysis <- "jan"
 # jan_out2$mast_re$analysis  <- "jan"
-jan_out3$mast_re$analysis  <- "jan"
-jan_out4$mast_fe$analysis  <- "jan"
-jan_out5$mast_re$analysis  <- "jan"
-jan_out6$deseq$analysis  <- "jan"
-jan_out7$mast_fe$analysis  <- "jan"
-jan_out8$mast_re$analysis  <- "jan"
-jan_out9$mast_re$analysis  <- "jan"
-jan_out10$deseq$analysis  <- "jan"
-jan_out11$mast_re$analysis  <- "jan"
-jan_out12$mast_fe$analysis  <- "jan"
+jan_out3$mast_re$analysis <- "jan"
+# jan_out4$mast_fe$analysis <- "jan"
+# jan_out5$mast_re$analysis <- "jan"
+jan_out6$deseq$analysis <- "jan"
+jan_out7$mast_fe$analysis <- "jan"
+jan_out8$mast_re$analysis <- "jan"
+jan_out9$mast_re$analysis <- "jan"
+jan_out10$deseq$analysis <- "jan"
+jan_out11$mast_re$analysis <- "jan"
+jan_out12$mast_fe$analysis <- "jan"
 # jan_out13$deseq$analysis  <- "jan"
 
 method_data <- rbind(
   splatpop_out$mast_fe, splatpop_out$mast_re, splatpop_out$deseq,
-
   resc_out$mast_fe, resc_out$mast_re, resc_out$deseq, res_out3$mast_re,
-  resc_out4$mast_fe, resc_out5$mast_fe, resc_out6$deseq,
-  resc_out7$mast_re, resc_out8$mast_re, resc_out9$mast_re,
+  resc_out4$mast_fe, resc_out6$deseq,
+  # resc_out5$mast_fe,resc_out7$mast_re, resc_out8$mast_re, resc_out9$mast_re,
   resc_out10$deseq, resc_out11$mast_re, resc_out12$mast_re,
   # resc_out13$deseq,
   resc_out14$mast_re, resc_out15$mast_fe,
-
   jan_out$mast_fe, jan_out$mast_re, jan_out$deseq, jan_out3$mast_re,
-  jan_out4$mast_fe, jan_out5$mast_re, jan_out6$deseq,
+  jan_out6$deseq,
   jan_out7$mast_fe, jan_out8$mast_re, jan_out9$mast_re,
   jan_out10$deseq, jan_out11$mast_re, jan_out12$mast_fe,
-  # jan_out13$deseq,
+  # jan_out13$deseq, jan_out4$mast_fe, jan_out5$mast_re,
+
+  resc_out_123$mast_fe, resc_out_123$mast_re, resc_out_123$deseq,
+  resc_out_123_3$mast_re, resc_out_123_4$mast_fe, resc_out_123_6$deseq,
+  resc_out_123_10$deseq, resc_out_123_11$mast_re, resc_out_123_12$mast_re,
+  resc_out_123_14$mast_re, resc_out_123_15$mast_fe,
+  resc_out_111$mast_fe, resc_out_111$mast_re, resc_out_111$deseq,
+  resc_out_111_3$mast_re, resc_out_111_4$mast_fe, resc_out_111_6$deseq,
+  resc_out_111_10$deseq, resc_out_111_11$mast_re, resc_out_111_12$mast_re,
+  resc_out_111_14$mast_re, resc_out_111_15$mast_fe,
+  resc_out_222$mast_fe, resc_out_222$mast_re, resc_out_222$deseq,
+  resc_out_222_3$mast_re, resc_out_222_4$mast_fe, resc_out_222_6$deseq,
+  resc_out_222_10$deseq, resc_out_222_11$mast_re, resc_out_222_12$mast_re,
+  resc_out_222_14$mast_re, resc_out_222_15$mast_fe,
+  resc_out_333$mast_fe, resc_out_333$mast_re, resc_out_333$deseq,
+  resc_out_333_3$mast_re, resc_out_333_4$mast_fe, resc_out_333_6$deseq,
+  resc_out_333_10$deseq, resc_out_333_11$mast_re, resc_out_333_12$mast_re,
+  resc_out_333_14$mast_re, resc_out_333_15$mast_fe,
   fill = TRUE
 )
 
@@ -813,19 +1428,22 @@ method_data <- rbind(
 board <- pins::board_local("nrgn-data")
 
 pins::pin_write(method_data,
-                name = "method_data",
-                type = "rds",
-                board = board,
-                versioned = TRUE
+  name = "method_data_new",
+  type = "rds",
+  board = board,
+  versioned = TRUE
 )
-
 
 # Merge ground_truth with method data:
 
-method_data <- pins::pin_read(board, "method_data")
+method_data <- pins::pin_read(board, "method_data_new")
 ground_truth <- pins::pin_read(board, "ground_truth")
 
-method_data$analysis <- as.character(method_data$analysis)
+method_data$analysis <- gsub(
+  pattern = "rescueSim \\((\\d+)\\)",
+  replacement = "rescueSim_\\1",
+  method_data$analysis
+)
 compare_data <- dplyr::bind_rows(
   lapply(names(ground_truth), function(sim) {
     dplyr::left_join(
@@ -838,9 +1456,67 @@ compare_data <- dplyr::bind_rows(
 
 pins::pin_write(
   compare_data,
-  name = "compare_data",
+  name = "compare_data_new",
   type = "rds",
   board = board,
   versioned = TRUE
 )
 
+# GROUND TRUTH HIST -----------------------------------------------------------
+
+# Create a pin for how many of the genes where in the conf intervals for the
+# rescuesim datasets
+summarise_ci_coverage <- function(df, conf_level = 0.95) {
+  z <- qnorm(1 - (1 - conf_level) / 2)
+
+  df <- df |>
+    dplyr::filter(!is.na(trueDE), !is.na(true_logFC)) |>
+    dplyr::mutate(
+      lower = log2FoldChange - z * lfcSE,
+      upper = log2FoldChange + z * lfcSE,
+      in_ci = true_logFC >= lower & true_logFC <= upper,
+      regulation = dplyr::case_when(
+        true_logFC > 0 ~ "up",
+        true_logFC < 0 ~ "down",
+        TRUE ~ "not_sig"
+      )
+    )
+
+  dplyr::tibble(
+    total_genes = nrow(df),
+    in_ci_total = sum(df$in_ci, na.rm = TRUE),
+    total_up = sum(df$regulation == "up"),
+    in_ci_up = sum(df$in_ci & df$regulation == "up", na.rm = TRUE),
+    total_down = sum(df$regulation == "down"),
+    in_ci_down = sum(df$in_ci & df$regulation == "down", na.rm = TRUE),
+    total_not_sig = sum(df$regulation == "not_sig"),
+    in_ci_not_sig = sum(df$in_ci & df$regulation == "not_sig", na.rm = TRUE)
+  )
+}
+
+ci_level <- 0.95 # you can loop over several if you want
+
+rescue_ci_summary <- compare_data |>
+  dplyr::filter(grepl("^rescueSim", analysis)) |>
+  dplyr::group_by(analysis, method, formula) |>
+  dplyr::group_modify(~ summarise_ci_coverage(.x, conf_level = ci_level)) |>
+  dplyr::ungroup() |>
+  dplyr::mutate(conf_level = ci_level)
+
+rescue_ci_summary <- rescue_ci_summary |>
+  dplyr::mutate(
+    prop_ci_total    = in_ci_total / total_genes,
+    prop_ci_up       = in_ci_up / total_up,
+    prop_ci_down     = in_ci_down / total_down,
+    prop_ci_not_sig  = in_ci_not_sig / total_not_sig
+  )
+
+board <- pins::board_local("nrgn-data")
+
+pins::pin_write(
+  rescue_ci_summary,
+  name = "rescueSim_ci",
+  type = "rds",
+  board = board,
+  versioned = TRUE
+)
