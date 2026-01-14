@@ -22,4 +22,6 @@ app_server <- function(input, output, session) {
   callModule(mod_hist_logfc_server, "hist_module", data = compare)
   callModule(mod_ci_hist_server, "ci_module", data = ci_data)
   callModule(mod_goi_server, "goi", sce_list = simulation)
+  callModule(mod_logfc_count_server, "lc_module", data = compare,
+             sim = simulation)
 }

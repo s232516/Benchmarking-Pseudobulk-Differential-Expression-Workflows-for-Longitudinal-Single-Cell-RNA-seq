@@ -29,7 +29,8 @@ app_ui <- function(request) {
       bslib::nav_panel('Ground Truth Plot', mod_gt_ui('gt')),
       bslib::nav_panel('Gene of Interest', mod_goi_ui('goi')),
       bslib::nav_panel('Histogram', mod_hist_logfc_ui('hist_module')),
-      bslib::nav_panel('CI Coverage Histogram', mod_ci_hist_ui('ci_module'))
+      bslib::nav_panel('CI Coverage Histogram', mod_ci_hist_ui('ci_module')),
+      bslib::nav_panel('Log2 Fold Change', mod_logfc_count_ui('lc_module'))
 
     )
   )
