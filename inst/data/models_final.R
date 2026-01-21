@@ -256,7 +256,7 @@ run_deseq_pseudobulk <- function(
     keep_condition <- rowSums(detected_by_condition) == ncol(detected_by_condition)
 
     # 3. FILTER: gene must have enough non-zero counts overall
-    keep_nz <- rowSums(detected_by_sample) >= 2 # like MAST's min cells detected
+    keep_nz <- rowSums(detected_by_sample) >= 2
 
     # 4. FILTER: gene must have reasonable total count
     keep_count <- rowSums(expr) >= min_counts
@@ -617,7 +617,7 @@ jan_out_mast_cdr <- pipeline_jan_and_methods(
   run_deseq = FALSE,
   design_formula_mast =
     ~ time + group:time + subjectID + cngeneson,
-  lrt_term = "groupTreatment:timeEoT"
+  lrt_term = "timeEoT:groupTreatment"
 )
 #### MAST random only ----------------------------------------------------------
 
@@ -806,8 +806,8 @@ resc_out_123_mast_re <- pipeline_rescue_and_methods(
 )
 resc_out_123_mast_re_cdr <- pipeline_rescue_and_methods(
   sce = sim_rescue_123,
-  run_mast = FALSE,
-  run_mast_ran = TRUE,
+  run_mast_fe = FALSE,
+  run_mast_re = TRUE,
   run_deseq = FALSE,
   design_formula_mast_rand =
     ~ group * time + subjectID + cngeneson +
