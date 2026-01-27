@@ -2,7 +2,7 @@
 #'
 #' @description A shiny Module.
 #'
-#' @param id,input,output,session Internal parameters for {shiny}.
+#' @param id Internal parameter for {shiny}.
 #'
 #' @noRd
 #'
@@ -16,35 +16,38 @@ mod_volcano_ui <- function(id) {
       width = 280,
       open = "always",
 
-      # Sidebar controls
+      # ---- Sidebar ----
       sidebar = bslib::accordion(
         id = ns("tx_accordion"),
+
         bslib::accordion_panel(
           title = "Analysis",
           icon = shiny::icon("bars"),
-          id = ns("tx_analysis"),
+
           shiny::selectInput(
             inputId = ns("data"),
-            label = bslib::tooltip(
-              trigger = shiny::tagList("Select dataset",
-                                       shiny::icon("circle-info")),
-              "Select which is the dataset that you want to use for
-                dimensionality reduction."
-            ),
-            choices = NULL
-          ),
-          shiny::selectInput(
-            inputId = ns("de_method"),
             label = bslib::tooltip(
               trigger = shiny::tagList(
                 "Select dataset",
                 shiny::icon("circle-info")
               ),
-              "Select which is the dataset that you want to use for
-              dimensionality reduction."
+              "Select which dataset to analyse."
             ),
             choices = NULL
           ),
+
+          shiny::selectInput(
+            inputId = ns("de_method"),
+            label = bslib::tooltip(
+              trigger = shiny::tagList(
+                "Select DE method",
+                shiny::icon("circle-info")
+              ),
+              "Select the differential expression method."
+            ),
+            choices = NULL
+          ),
+
           shiny::selectInput(
             inputId = ns("formula"),
             label = bslib::tooltip(
@@ -52,69 +55,72 @@ mod_volcano_ui <- function(id) {
                 "Select formula",
                 shiny::icon("circle-info")
               ),
-              "Select which is the formula that you want to use for
-              dimensionality reduction."
+              "Select the model formula."
             ),
             choices = NULL
           ),
+
           shiny::checkboxInput(
             inputId = ns("highlight_truede"),
             label = "Highlight true DE genes",
             value = FALSE
           ),
+
           shiny::radioButtons(
             inputId = ns("pvalue"),
-            label = "P-value",
+            label = "Adjusted p-value threshold",
             choices = c(0.1, 0.05, 0.01, 0.005, 0.001),
             selected = 0.05
           ),
+
           shiny::sliderInput(
             inputId = ns("logfc"),
-            label = "Log2 Fold Change",
+            label = "Log2 fold-change threshold",
             min = 0,
             max = 4,
-            value = 0
+            value = 0,
+            step = 0.01
           )
         )
       ),
 
-      # MAIN AREA: scrollable container with plot (fixed height) + table below
+      # ---- Main area ----
       bslib::layout_columns(
         col_widths = 12,
+
         div(
           style = "overflow-y: auto; padding-right: 10px; padding-left: 10px;",
-          # volcano plot card
+
+          # ---- Volcano plot ----
           bslib::card(
             style = "margin-bottom: 1rem;",
+
             bslib::card_header(
               div(
-                style = "display: flex; justify-content: space-between;
-                align-items: center;",
+                style = "display:flex; justify-content:space-between; align-items:center;",
                 "Volcano Plot",
                 shiny::downloadButton(
-                  class = "clickable-button-light",
                   outputId = ns("download_plot"),
-                  label = ""
+                  label = "",
+                  class = "clickable-button-light"
                 )
               )
             ),
+
             bslib::card_body(
-              div(
-                style = "width: 100%; height: 550px; overflow: hidden;",
-                shiny::plotOutput(ns("volcano_plot"), height = "550px",
-                                  width = "100%")
+              shiny::plotOutput(
+                outputId = ns("volcano_plot"),
+                height = "550px",
+                width = "100%"
               )
             )
           ),
 
-          # table card below (scrollable to it)
+          # ---- Table ----
           bslib::card(
             bslib::card_header("Volcano Plot Data Table"),
             bslib::card_body(
-              div(
-                style = "width: 100%",
-                DT::DTOutput(ns("volcano_table"))
-              )
+              DT::DTOutput(ns("volcano_table"))
             )
           )
         )
@@ -122,26 +128,12 @@ mod_volcano_ui <- function(id) {
     )
   )
 }
-
-
-#' mod_volcano Server Functions
+#' mod_volcano Server Function
 #'
 #' @noRd
 mod_volcano_server <- function(input, output, session, data) {
-  ns <- session$ns
 
-  observeEvent(input$data, {
-    df <- data |>
-      dplyr::filter(analysis == input$data)
-    choices <- unique(df$method)
-    shiny::updateSelectInput(
-      session,
-      "de_method",
-      choices = choices,
-      selected = choices[1]
-    )
-  })
-
+  # ---- Update dataset selector ----
   observe({
     shiny::updateSelectInput(
       session,
@@ -151,173 +143,221 @@ mod_volcano_server <- function(input, output, session, data) {
     )
   })
 
-  observeEvent(c(input$data,input$de_method), {
+  observeEvent(input$data, {
     df <- data |>
-      dplyr::filter(analysis == input$data,
-                    method == input$de_method)
-    choices <- unique(df$formula)
+      dplyr::filter(analysis == input$data)
+
     shiny::updateSelectInput(
       session,
-      "formula",
-      choices = choices,
-      selected = choices[1]
+      "de_method",
+      choices = unique(df$method),
+      selected = unique(df$method)[1]
     )
   })
 
-
-  shiny::updateSliderInput(
-    session,
-    "logfc",
-    min = 0,
-    max = round(max(abs(data$log2FoldChange),
-      na.rm = TRUE
-    )),
-    value = 0,
-    step = 0.01
-  )
-  # Bonferroni Correction
-
-  volcano_data <- reactive({
-    req( input$de_method, input$data)
+  observeEvent(c(input$data, input$de_method), {
     df <- data |>
-      dplyr::filter(method == input$de_method) |>
-      dplyr::filter(analysis == input$data) |>
-      dplyr::filter(formula == input$formula) |>
-      dplyr::mutate(neg_log10_pvalue = -log10(.data$pvalue),
-                    is_true_de = ifelse(trueDE == 1, TRUE, FALSE)) |>
-      dplyr::arrange(.data$pvalue) |>
-      dplyr::mutate(pvalue_adj = dplyr::case_when(
-        (.data$padj <= as.numeric(input$pvalue)) ~ .data$pvalue,
-        TRUE ~ 0
-      )) |>
-      dplyr::mutate(significance = dplyr::case_when(
-        (.data$padj <= as.numeric(input$pvalue)) & (.data$log2FoldChange >
-          input$logfc)
-        ~ "Upregulated",
-        (.data$padj <= as.numeric(input$pvalue)) & (.data$log2FoldChange <
-          -input$logfc)
-        ~ "Downregulated",
-        TRUE ~ "Not significant"
-      ))
+      dplyr::filter(
+        analysis == input$data,
+        method == input$de_method
+      )
+
+    shiny::updateSelectInput(
+      session,
+      "formula",
+      choices = unique(df$formula),
+      selected = unique(df$formula)[1]
+    )
   })
 
-  output$volcano_plot <- shiny::renderPlot({
-    req(volcano_data())
-    if(nrow(volcano_data()) != 0){
-    df <- as.data.frame(volcano_data())
-    max_es <- ceiling(max(abs(df$log2FoldChange),
-      na.rm = TRUE
-    ))
-    max_pvalue <- max(df$pvalue_adj)
-    y_thres <- NULL
-    if (max_pvalue > 0) {
-      y_thres <- max_pvalue
-    }
+  # ---- Update logFC slider dynamically ----
+  observe({
+    shiny::updateSliderInput(
+      session,
+      "logfc",
+      min = 0,
+      max = round(
+        max(abs(data$log2FoldChange), na.rm = TRUE)
+      ),
+      value = 0,
+      step = 0.01
+    )
+  })
 
+  # ---- Volcano data ----
+  volcano_data <- reactive({
+    req(input$data, input$de_method, input$formula)
+
+    data |>
+      dplyr::filter(
+        analysis == input$data,
+        method == input$de_method,
+        formula == input$formula
+      ) |>
+      dplyr::mutate(
+        neg_log10_pvalue = -log10(pvalue),
+        is_true_de = trueDE == 1,
+        significance = dplyr::case_when(
+          padj <= as.numeric(input$pvalue) &
+            log2FoldChange > input$logfc ~ "Upregulated",
+          padj <= as.numeric(input$pvalue) &
+            log2FoldChange < -input$logfc ~ "Downregulated",
+          TRUE ~ "Not significant"
+        )
+      )
+  })
+
+  # ---- Volcano plot object (single source of truth) ----
+  volcano_plot_obj <- reactive({
+    df <- as.data.frame(volcano_data())
+
+    validate(
+      need(nrow(df) > 0, "No data available")
+    )
+
+    max_es <- ceiling(max(abs(df$log2FoldChange), na.rm = TRUE))
     x_lims <- c(-max_es, max_es)
 
-    # If highlight is active, override significance colors for true DE genes
     if (input$highlight_truede) {
       df$significance <- ifelse(df$is_true_de, "true DE", df$significance)
+
       counts <- df |>
         dplyr::count(significance) |>
         tibble::deframe()
 
-      # build legend labels with counts
-      legend_labels <- c(
-        "true DE" = paste0("true DE (", counts["true DE"], ")"),
-        "Upregulated" = paste0("Upregulated (", counts["Upregulated"], ")"),
-        "Downregulated" = paste0("Downregulated (", counts["Downregulated"], ")"),
-        "Not significant" = paste0("Not significant (", counts["Not significant"], ")")
-      )
-
-      color_order <- c(
-        "true DE" = "#C9980B",       # gold
+      colors <- c(
+        "true DE" = "#C9980B",
         "Upregulated" = "#b2182b",
         "Downregulated" = "#2166ac",
         "Not significant" = "#c0c0c0"
       )
+
+      labels <- paste0(names(counts), " (", counts, ")")
+      names(labels) <- names(counts)
+
     } else {
-      color_order <- c(
+      counts <- df |>
+        dplyr::count(significance) |>
+        tibble::deframe()
+
+      colors <- c(
         "Upregulated" = "#b2182b",
         "Downregulated" = "#2166ac",
         "Not significant" = "#c0c0c0"
       )
 
-      counts <- df |>
-        dplyr::count(significance) |>
-        tibble::deframe()
+      labels <- paste0(names(counts), " (", counts, ")")
+      names(labels) <- names(counts)
 
-      # build legend labels with counts
-      legend_labels <- c(
-        "Upregulated" = paste0("Upregulated (", counts["Upregulated"], ")"),
-        "Downregulated" = paste0("Downregulated (", counts["Downregulated"], ")"),
-        "Not significant" = paste0("Not significant (", counts["Not significant"], ")")
-      )
+    }
+
+    # smallest adjusted p-value among non-significant genes
+    padj_line <- df |>
+      dplyr::filter(
+       significance == "Not significant") |>
+      dplyr::select(padj,gene)
+    print(padj_line)
+    padj_line = min(padj_line$padj, na.rm = TRUE)
+    print(padj_line)
 
 
+    # handle edge case: all genes significant
+    if (length(padj_line) == 0 || is.na(padj_line)) {
+      padj_line <- NULL
     }
 
 
     volcano_plot(
       data = df,
       x = "log2FoldChange",
-      y = "pvalue",
+      y = "padj",
       color_col = "significance",
-      colors = color_order,
-      color_labels = legend_labels,
+      colors = colors,
+      color_labels = labels,
       labels = "gene",
-      y_axis_title = "P-value",
-      x_axis_title = "Effect Size",
+      x_axis_title = "Effect size",
+      y_axis_title = "P-value Adjusted",
       plot_title = paste("Volcano Plot -", input$de_method),
       x_lims = x_lims,
-      hline = y_thres,
+      hline = padj_line,
       vline = input$logfc,
       label_size = 5
-    ) + ggplot2::theme(
-      aspect.ratio = 1,
-      text = ggplot2::element_text(size = 18)
-    )
-    }
+    ) +
+      ggplot2::theme(
+        aspect.ratio = 1,
+        text = ggplot2::element_text(size = 18)
+      )
   })
 
-  output$volcano_table <- DT::renderDT({
-    df <- volcano_data()
+  # ---- Render plot ----
+  output$volcano_plot <- shiny::renderPlot({
+    volcano_plot_obj()
+  })
 
+  # ---- Table ----
+  output$volcano_table <- DT::renderDT({
     DT::datatable(
-      df,
+      volcano_data(),
       options = list(
         pageLength = 10,
         scrollX = TRUE,
         searching = TRUE,
         ordering = TRUE
-        )
+      )
     )
   })
 
+  # ---- Desktop/plots directory ----
+  plots_dir <- file.path(
+    path.expand("~"),
+    "Desktop",
+    "plots"
+  )
 
+  if (!dir.exists(plots_dir)) {
+    dir.create(plots_dir, recursive = TRUE)
+  }
+
+  # ---- Download ----
   output$download_plot <- shiny::downloadHandler(
     filename = function() {
-      paste("volcano_plot", ".png", sep = "")
+      paste0(
+        "volcano_",
+        input$data, "_",
+        input$de_method, "_",
+        Sys.Date(),
+        ".png"
+      )
     },
     content = function(file) {
-      df <- as.data.frame(volcano_data())
 
-      color_order <- c(
-        "Upregulated" = "#b2182b", "Downregulated" = "#2166ac",
-        "Not significant" = "#c0c0c0"
+      desktop_file <- file.path(
+        plots_dir,
+        paste0(
+          "volcano_",
+          input$data, "_",
+          input$de_method, "_",
+          Sys.Date(),
+          ".png"
+        )
       )
 
-      volcano_plot(
-        data = df, x = "log2FoldChange", y = "pvalue",
-        color_col = "significance", colors = color_order,
-        labels = "gene", y_axis_title = "P-value",
-        x_axis_title = "Effect Size", hline = -log10(input$pvalue),
-        vline = input$logfc
-      ) + ggplot2::theme(
-        aspect.ratio = 1,
-        text = ggplot2::element_text(size = 18)
+      ggplot2::ggsave(
+        filename = desktop_file,
+        plot = volcano_plot_obj(),
+        width = 7,
+        height = 6,
+        dpi = 300
+      )
+
+      ggplot2::ggsave(
+        filename = file,
+        plot = volcano_plot_obj(),
+        width = 7,
+        height = 7,
+        dpi = 300
       )
     }
   )
 }
+
