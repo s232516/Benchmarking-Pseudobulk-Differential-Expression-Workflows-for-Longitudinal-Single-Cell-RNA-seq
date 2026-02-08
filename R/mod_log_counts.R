@@ -152,7 +152,6 @@ mod_logfc_count_server <- function(input, output, session, data, sim) {
 
   simu <- reactive({
     req(input$data)
-    req(input$data)
 
     counts <- sim[[input$data]]@assays@data$counts
 
