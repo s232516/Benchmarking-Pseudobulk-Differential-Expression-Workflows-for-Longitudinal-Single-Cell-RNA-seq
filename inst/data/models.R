@@ -173,11 +173,9 @@ run_deseq_pseudobulk <- function(
   ids,
   design_formula,
   relevel = NULL,
-  # named list, e.g. list(Treatment = "Placebo", Time = "Baseline")
   min_counts = 10,
   sfType = "ratio",
   lrt_term = NULL,
-  # optional: MAST-style contrast or coefficient name
   alpha = 0.05,
   save_dds = FALSE,
   verbose = TRUE,
@@ -231,10 +229,10 @@ run_deseq_pseudobulk <- function(
     cond <- md[[cond_var]]
     cond <- droplevels(cond)
 
-    # 1. DETECTION PER SAMPLE (gene expressed if count > 0)
+    # DETECTION PER SAMPLE (gene expressed if count > 0)
     detected_by_sample <- expr > 0
 
-    # 2. FILTER: gene detected in at least 1 sample per condition
+    # FILTER: gene detected in at least 1 sample per condition
     detected_by_condition <- sapply(levels(cond), function(gr) {
       idx <- which(cond == gr)
       rowSums(detected_by_sample[, idx, drop = FALSE]) > 0
@@ -247,10 +245,10 @@ run_deseq_pseudobulk <- function(
 
     keep_condition <- rowSums(detected_by_condition) == ncol(detected_by_condition)
 
-    # 3. FILTER: gene must have enough non-zero counts overall
+    # FILTER: gene must have enough non-zero counts overall
     keep_nz <- rowSums(detected_by_sample) >= 2 # like MAST's min cells detected
 
-    # 4. FILTER: gene must have reasonable total count
+    # FILTER: gene must have reasonable total count
     keep_count <- rowSums(expr) >= min_counts
 
     # Combine all
@@ -312,17 +310,16 @@ run_deseq_pseudobulk <- function(
     return(NULL)
   }
 
-  ### FIX 3 — Determine the actual DESeq2 coefficient name #############
+  # Determine the actual DESeq2 coefficient name
   dseq_names <- DESeq2::resultsNames(dds)
 
   if (verbose) {
     message("\nDESeq2 coefficient names:")
     print(dseq_names)
   }
-  ######################################################################
 
 
-  ### FIX 4 — Map the MAST LRT term to the DESeq2 coefficient #########
+  ### Map the MAST LRT term to the DESeq2 coefficient
   if (!is.null(lrt_term)) {
     search_term <- lrt_term
 
@@ -347,11 +344,8 @@ run_deseq_pseudobulk <- function(
       message("\nMAST term: ", lrt_term)
       message("Mapped DESeq2 coefficient: ", coef_name)
     }
-    #######################################################################
-    ### FIX 5 — use name= instead of contrast=
     res <- DESeq2::results(dds, name = coef_name, alpha = alpha)
   } else {
-    ### fallback (should rarely be used)
     res <- DESeq2::results(dds, alpha = alpha)
   }
 
