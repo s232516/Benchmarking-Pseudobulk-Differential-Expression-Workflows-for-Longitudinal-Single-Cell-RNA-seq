@@ -1099,7 +1099,7 @@ splatpop_out$deseq$analysis <- "splatpop"
 resc_out$mast_fe$analysis <- "rescueSim" # 1
 resc_out$mast_re$analysis <- "rescueSim"
 resc_out$deseq$analysis <- "rescueSim"
-resc_out_mast$mast_re$analysis <- "rescueSim" # 3
+resc_out_mast$mast_fe$analysis <- "rescueSim" # 3
 resc_out_mast_cdr$mast_fe$analysis <- "rescueSim" # 2
 resc_out_mast_ra$mast_re$analysis <- "rescueSim" # 4
 resc_out_mast_ra_cdr$mast_re$analysis <- "rescueSim" # 5
@@ -1109,10 +1109,10 @@ resc_out_deseq_s$deseq$analysis <- "rescueSim" # 7
 resc_out_123$mast_fe$analysis <- "rescueSim (123)" # 1
 resc_out_123$mast_re$analysis <- "rescueSim (123)"
 resc_out_123$deseq$analysis <- "rescueSim (123)"
-resc_out_123_mast$mast_re$analysis <- "rescueSim (123)" # 3
+resc_out_123_mast$mast_fe$analysis <- "rescueSim (123)" # 3
 resc_out_123_mast_cdr$mast_fe$analysis <- "rescueSim (123)" # 2
-resc_out_123_mast_ra$mast_re$analysis <- "rescueSim (123)" # 4
-resc_out_123_mast_ra_cdr$mast_re$analysis <- "rescueSim (123)" # 5
+resc_out_123_mast_re$mast_re$analysis <- "rescueSim (123)" # 4
+resc_out_123_mast_re_cdr$mast_re$analysis <- "rescueSim (123)" # 5
 resc_out_123_deseq$deseq$analysis <- "rescueSim (123)" # 6
 resc_out_123_deseq_s$deseq$analysis <- "rescueSim (123)" # 7
 
@@ -1120,7 +1120,7 @@ resc_out_123_deseq_s$deseq$analysis <- "rescueSim (123)" # 7
 resc_out_111$mast_fe$analysis <- "rescueSim (111)" # 1
 resc_out_111$mast_re$analysis <- "rescueSim (111)"
 resc_out_111$deseq$analysis <- "rescueSim (111)"
-resc_out_111_mast$mast_re$analysis <- "rescueSim (111)" # 3
+resc_out_111_mast$mast_fe$analysis <- "rescueSim (111)" # 3
 resc_out_111_mast_cdr$mast_fe$analysis <- "rescueSim (111)" # 2
 resc_out_111_mast_ra$mast_re$analysis <- "rescueSim (111)" # 4
 resc_out_111_mast_ra_cdr$mast_re$analysis <- "rescueSim (111)" # 5
@@ -1130,7 +1130,7 @@ resc_out_111_deseq_s$deseq$analysis <- "rescueSim (111)" # 7
 resc_out_222$mast_fe$analysis <- "rescueSim (222)" # 1
 resc_out_222$mast_re$analysis <- "rescueSim (222)"
 resc_out_222$deseq$analysis <- "rescueSim (222)"
-resc_out_222_mast$mast_re$analysis <- "rescueSim (222)" # 3
+resc_out_222_mast$mast_fe$analysis <- "rescueSim (222)" # 3
 resc_out_222_mast_cdr$mast_fe$analysis <- "rescueSim (222)" # 2
 resc_out_222_mast_ra$mast_re$analysis <- "rescueSim (222)" # 4
 resc_out_222_mast_ra_cdr$mast_re$analysis <- "rescueSim (222)" # 5
@@ -1140,7 +1140,7 @@ resc_out_222_deseq_s$deseq$analysis <- "rescueSim (222)" # 7
 resc_out_333$mast_fe$analysis <- "rescueSim (333)" # 1
 resc_out_333$mast_re$analysis <- "rescueSim (333)"
 resc_out_333$deseq$analysis <- "rescueSim (333)"
-resc_out_333_mast$mast_re$analysis <- "rescueSim (333)" # 3
+resc_out_333_mast$mast_fe$analysis <- "rescueSim (333)" # 3
 resc_out_333_mast_cdr$mast_fe$analysis <- "rescueSim (333)" # 2
 resc_out_333_mast_ra$mast_re$analysis <- "rescueSim (333)" # 4
 resc_out_333_mast_ra_cdr$mast_re$analysis <- "rescueSim (333)" # 5
@@ -1150,7 +1150,7 @@ resc_out_333_deseq_s$deseq$analysis <- "rescueSim (333)" # 7
 jan_out$mast_fe$analysis <- "jan"
 jan_out$mast_re$analysis <- "jan"
 jan_out$deseq$analysis <- "jan"
-jan_out_mast$mast_re$analysis <- "jan"
+jan_out_mast$mast_fe$analysis <- "jan"
 jan_out_mast_cdr$mast_fe$analysis <- "jan"
 jan_out_mast_ra$mast_re$analysis <- "jan"
 jan_out_mast_ra_cdr$mast_re$analysis <- "jan"
@@ -1162,27 +1162,27 @@ method_data <- rbind(
   splatpop_out$mast_fe, splatpop_out$mast_re, splatpop_out$deseq,
 
   resc_out$mast_fe, resc_out$mast_re, resc_out$deseq,
-  resc_out_mast$mast_re, resc_out_mast_cdr$mast_fe, resc_out_mast_ra$mast_re,
+  resc_out_mast$mast_fe, resc_out_mast_cdr$mast_fe, resc_out_mast_ra$mast_re,
   resc_out_mast_ra_cdr$mast_re, resc_out_deseq$deseq, resc_out_deseq_s$deseq,
 
   jan_out$mast_fe, jan_out$mast_re, jan_out$deseq,
-  jan_out_mast$mast_re, jan_out_mast_cdr$mast_fe, jan_out_mast_ra$mast_re,
+  jan_out_mast$mast_fe, jan_out_mast_cdr$mast_fe, jan_out_mast_ra$mast_re,
   jan_out_mast_ra_cdr$mast_re, jan_out_deseq$deseq, jan_out_deseq_s$deseq,
 
   resc_out_123$mast_fe, resc_out_123$mast_re, resc_out_123$deseq,
-  resc_out_123_mast$mast_re, resc_out_123_mast_cdr$mast_fe, resc_out_123_mast_ra$mast_re,
-  resc_out_123_mast_ra_cdr$mast_re, resc_out_123_deseq$deseq, resc_out_123_deseq_s$deseq,
+  resc_out_123_mast$mast_fe, resc_out_123_mast_cdr$mast_fe, resc_out_123_mast_re$mast_re,
+  resc_out_123_mast_re_cdr$mast_re, resc_out_123_deseq$deseq, resc_out_123_deseq_s$deseq,
 
   resc_out_111$mast_fe, resc_out_111$mast_re, resc_out_111$deseq,
-  resc_out_111_mast$mast_re, resc_out_111_mast_cdr$mast_fe, resc_out_111_mast_ra$mast_re,
+  resc_out_111_mast$mast_fe, resc_out_111_mast_cdr$mast_fe, resc_out_111_mast_ra$mast_re,
   resc_out_111_mast_ra_cdr$mast_re, resc_out_111_deseq$deseq, resc_out_111_deseq_s$deseq,
 
   resc_out_222$mast_fe, resc_out_222$mast_re, resc_out_222$deseq,
-  resc_out_222_mast$mast_re, resc_out_222_mast_cdr$mast_fe, resc_out_222_mast_ra$mast_re,
+  resc_out_222_mast$mast_fe, resc_out_222_mast_cdr$mast_fe, resc_out_222_mast_ra$mast_re,
   resc_out_222_mast_ra_cdr$mast_re, resc_out_222_deseq$deseq, resc_out_222_deseq_s$deseq,
 
   resc_out_333$mast_fe, resc_out_333$mast_re, resc_out_333$deseq,
-  resc_out_333_mast$mast_re, resc_out_333_mast_cdr$mast_fe, resc_out_333_mast_ra$mast_re,
+  resc_out_333_mast$mast_fe, resc_out_333_mast_cdr$mast_fe, resc_out_333_mast_ra$mast_re,
   resc_out_333_mast_ra_cdr$mast_re, resc_out_333_deseq$deseq, resc_out_333_deseq_s$deseq,
   fill = TRUE
 )
@@ -1226,60 +1226,113 @@ pins::pin_write(
 )
 
 # GROUND TRUTH HIST -----------------------------------------------------------
+compute_mast_truth_interaction <- function(sce, analysis_name) {
+
+  cts <- SingleCellExperiment::counts(sce)
+  logCPM <- log2((1e6 * cts / colSums(cts)) + 1)
+
+  trt_eot  <- sce$group == "Treatment" & sce$time == "EoT"
+  trt_base <- sce$group == "Treatment" & sce$time == "Baseline"
+  ctl_eot  <- sce$group == "Placebo"   & sce$time == "EoT"
+  ctl_base <- sce$group == "Placebo"   & sce$time == "Baseline"
+
+  truth <- rowMeans(logCPM[, trt_eot]) -
+    rowMeans(logCPM[, trt_base]) -
+    rowMeans(logCPM[, ctl_eot]) +
+    rowMeans(logCPM[, ctl_base])
+
+  data.frame(
+    gene = rownames(cts),
+    true_logFC_MAST = truth,
+    analysis = analysis_name
+  )
+}
+
+mast_truth_all <- dplyr::bind_rows(
+  compute_mast_truth_interaction(sim_rescue,     "rescueSim"),
+  compute_mast_truth_interaction(sim_rescue_111, "rescueSim_111"),
+  compute_mast_truth_interaction(sim_rescue_222, "rescueSim_222"),
+  compute_mast_truth_interaction(sim_rescue_333, "rescueSim_333"),
+  compute_mast_truth_interaction(sim_rescue_123, "rescueSim_123")
+)
+
+compare_data <- compare_data |>
+  dplyr::left_join(
+    mast_truth_all,
+    by = c("gene", "analysis")
+  )
+
+compare_data <- compare_data |>
+  dplyr::mutate(
+    true_logFC_used = dplyr::case_when(
+      grepl("^MAST", method) ~ true_logFC_MAST,
+      TRUE                   ~ true_logFC
+    )
+  )
+
+
 
 # Create a pin for how many of the genes where in the conf intervals for the
 # rescuesim datasets
+
 summarise_ci_coverage <- function(df, conf_level = 0.95) {
+
   z <- qnorm(1 - (1 - conf_level) / 2)
 
   df <- df |>
-    dplyr::filter(!is.na(trueDE), !is.na(true_logFC)) |>
+    dplyr::filter(
+      !is.na(true_logFC_used),
+      is.finite(lfcSE),
+      is.finite(log2FoldChange)
+    ) |>
     dplyr::mutate(
       lower = log2FoldChange - z * lfcSE,
       upper = log2FoldChange + z * lfcSE,
-      in_ci = true_logFC >= lower & true_logFC <= upper,
+      in_ci = true_logFC_used >= lower &
+        true_logFC_used <= upper,
       regulation = dplyr::case_when(
-        true_logFC > 0 ~ "up",
-        true_logFC < 0 ~ "down",
+        true_logFC_used > 0 ~ "up",
+        true_logFC_used < 0 ~ "down",
         TRUE ~ "not_sig"
       )
     )
 
   dplyr::tibble(
     total_genes = nrow(df),
-    in_ci_total = sum(df$in_ci, na.rm = TRUE),
+    in_ci_total = sum(df$in_ci),
     total_up = sum(df$regulation == "up"),
-    in_ci_up = sum(df$in_ci & df$regulation == "up", na.rm = TRUE),
+    in_ci_up = sum(df$in_ci & df$regulation == "up"),
     total_down = sum(df$regulation == "down"),
-    in_ci_down = sum(df$in_ci & df$regulation == "down", na.rm = TRUE),
+    in_ci_down = sum(df$in_ci & df$regulation == "down"),
     total_not_sig = sum(df$regulation == "not_sig"),
-    in_ci_not_sig = sum(df$in_ci & df$regulation == "not_sig", na.rm = TRUE)
+    in_ci_not_sig = sum(df$in_ci & df$regulation == "not_sig")
   )
 }
 
-ci_level <- 0.95 # you can loop over several if you want
+ci_level <- 0.95
 
 rescue_ci_summary <- compare_data |>
   dplyr::filter(grepl("^rescueSim", analysis)) |>
   dplyr::group_by(analysis, method, formula) |>
   dplyr::group_modify(~ summarise_ci_coverage(.x, conf_level = ci_level)) |>
   dplyr::ungroup() |>
-  dplyr::mutate(conf_level = ci_level)
-
-rescue_ci_summary <- rescue_ci_summary |>
   dplyr::mutate(
+    conf_level = ci_level,
     prop_ci_total    = in_ci_total / total_genes,
     prop_ci_up       = in_ci_up / total_up,
     prop_ci_down     = in_ci_down / total_down,
     prop_ci_not_sig  = in_ci_not_sig / total_not_sig
   )
 
+
 board <- pins::board_local("nrgn-data")
 
 pins::pin_write(
   rescue_ci_summary,
-  name = "rescueSim_ci_new",
+  name = "rescueSim_ci_final",
   type = "rds",
   board = board,
   versioned = TRUE
 )
+
+
