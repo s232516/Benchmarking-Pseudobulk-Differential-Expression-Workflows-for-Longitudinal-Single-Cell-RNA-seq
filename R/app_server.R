@@ -9,10 +9,11 @@ app_server <- function(input, output, session) {
 
   board <- pins::board_local("nrgn-data")
 
-  method_data  <- pins::pin_read(board, "method_data_new")
+  method_data  <- pins::pin_read(board, "method_data_final")
   simulation <- pins::pin_read(board, "simulations")
-  compare <- pins::pin_read(board, "compare_data_new")
-  ci_data <- pins::pin_read(board, "rescueSim_ci")
+  compare <- pins::pin_read(board, "compare_data_final")
+  ci_data <- pins::pin_read(board, "rescueSim_ci_final")
+  ground_truth <- pins::pin_read(board, "ground_truth")
 
   # callModule(mod_overview_server, "overview", sim = sim_pop_cond)
   callModule(mod_dr_server, "dim_red", data = simulation)
@@ -24,4 +25,7 @@ app_server <- function(input, output, session) {
   callModule(mod_goi_server, "goi", sce_list = simulation)
   callModule(mod_logfc_count_server, "lc_module", data = compare,
              sim = simulation)
+  callModule(mod_counts_hist_server, "ch_module", data = simulation)
+  callModule(mod_filter_summary_server, "fs_module", compare_data = compare,
+  ground_truth = ground_truth)
 }
