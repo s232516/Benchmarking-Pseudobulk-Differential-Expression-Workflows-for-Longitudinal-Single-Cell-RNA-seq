@@ -170,7 +170,7 @@ mod_roc_server <- function(input, output, session, data) {
       dplyr::mutate(score = -log10(padj))
   })
 
-  # ---- evalmod object (shared) ----
+  # ---- evalmod object ----
   rocpr_obj <- reactive({
     df <- rocpr_data()
 
@@ -184,11 +184,42 @@ mod_roc_server <- function(input, output, session, data) {
     )
   })
 
-  # ---- ROC plot object ----
+  # ---- FDR = 0.05 operating point ----
+  roc_fdr05_point <- reactive({
+    df <- rocpr_data()
+
+    df <- df |>
+      dplyr::arrange(padj) |>
+      dplyr::mutate(
+        discoveries = dplyr::row_number(),
+        false_pos = cumsum(trueDE == 0),
+        true_pos  = cumsum(trueDE == 1),
+        fdr = false_pos / discoveries
+      )
+
+    df_fdr <- df |> dplyr::filter(fdr <= 0.05)
+
+    validate(
+      need(nrow(df_fdr) > 0, "No FDR ≤ 0.05 point available")
+    )
+
+    pt <- df_fdr |> dplyr::slice_tail(n = 1)
+
+    n_pos <- sum(df$trueDE == 1)
+    n_neg <- sum(df$trueDE == 0)
+
+    tibble::tibble(
+      FPR = pt$false_pos / n_neg,
+      TPR = pt$true_pos  / n_pos,
+      padj = pt$padj
+    )
+  })
+
+  # ---- ROC plot ----
   roc_plot_obj <- reactive({
     req(rocpr_obj())
 
-    suppressWarnings(
+    p <- suppressWarnings(
       ggplot2::autoplot(rocpr_obj(), curvetype = "ROC")
     ) +
       ggplot2::labs(
@@ -197,9 +228,37 @@ mod_roc_server <- function(input, output, session, data) {
       ) +
       ggplot2::theme_bw(base_size = 16) +
       ggplot2::theme(aspect.ratio = 1)
+
+    if (!is.null(roc_fdr05_point())) {
+      pt <- roc_fdr05_point()
+
+      p <- p +
+        ggplot2::geom_point(
+          data = pt,
+          ggplot2::aes(x = FPR, y = TPR),
+          color = "#C9980B",
+          inherit.aes = FALSE,
+          size = 3
+        ) +
+        ggplot2::geom_text(
+          data = pt,
+          ggplot2::aes(
+            x = FPR,
+            y = TPR,
+            label = "FDR = 0.05"
+          ),
+          hjust = -0.1,
+          vjust = -0.5,
+          inherit.aes = FALSE,
+          size = 5,
+          color = "#C9980B"
+        )
+    }
+
+    p
   })
 
-  # ---- PR plot object ----
+  # ---- PR plot ----
   pr_plot_obj <- reactive({
     req(rocpr_obj())
 
@@ -323,4 +382,3 @@ mod_roc_server <- function(input, output, session, data) {
     }
   )
 }
-
