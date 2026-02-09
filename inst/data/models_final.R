@@ -403,7 +403,7 @@ run_methods <- function(
       random_var = NULL,
       random = FALSE,
       ebayes = FALSE,
-      norm = TRUE
+      norm = norm
     )
     message("MAST (fixed effects) completed")
 
@@ -426,7 +426,7 @@ run_methods <- function(
       random = TRUE,
       method = "glmer",
       ebayes = FALSE,
-      norm = TRUE
+      norm = norm
     )
     message("MAST (random effects) completed")
 
@@ -491,7 +491,7 @@ pipeline_splatpop_and_methods <- function(
     run_mast_fe = run_mast_fe,
     run_mast_re = run_mast_re,
     run_deseq = run_deseq,
-    norm = TRUE)
+    norm = norm)
 }
 
 ## rescueSim pipeline with methods ---------------------------------------------
@@ -521,7 +521,7 @@ pipeline_rescue_and_methods <- function(
     run_mast_fe = run_mast_fe,
     run_mast_re = run_mast_re,
     run_deseq = run_deseq,
-    norm = TRUE
+    norm = norm
   )
 
   rescue_results
@@ -792,7 +792,7 @@ SummarizedExperiment::colData(sim_rescue_mod_111) <- S4Vectors::DataFrame(cd)
 
 ### Run different versions of the pipeline -------------------------------------
 
-resc_out_111 <- pipeline_rescue_and_methods(sce = sim_rescue_111)
+# resc_out_111 <- pipeline_rescue_and_methods(sce = sim_rescue_111)
 
 #### MAST fixed only -----------------------------------------------------------
 resc_out_111_mast <- pipeline_rescue_and_methods(
@@ -900,7 +900,7 @@ SummarizedExperiment::colData(sim_rescue_mod_222) <- S4Vectors::DataFrame(cd)
 
 ### Run different versions of the pipeline -------------------------------------
 
-resc_out_222 <- pipeline_rescue_and_methods(sce = sim_rescue_222)
+# resc_out_222 <- pipeline_rescue_and_methods(sce = sim_rescue_222)
 
 #### MAST fixed only -----------------------------------------------------------
 resc_out_222_mast <- pipeline_rescue_and_methods(
@@ -1006,7 +1006,7 @@ SummarizedExperiment::colData(sim_rescue_mod_333) <- S4Vectors::DataFrame(cd)
 
 ### Run different versions of the pipeline -------------------------------------
 
-resc_out_333 <- pipeline_rescue_and_methods(sce = sim_rescue_333)
+# resc_out_333 <- pipeline_rescue_and_methods(sce = sim_rescue_333)
 
 #### MAST fixed only -----------------------------------------------------------
 resc_out_333_mast <- pipeline_rescue_and_methods(
