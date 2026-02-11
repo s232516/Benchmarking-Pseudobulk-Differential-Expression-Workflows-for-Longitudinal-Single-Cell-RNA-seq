@@ -1178,26 +1178,31 @@ method_data <- rbind(
   splatpop_out_no_norm$mast_fe, splatpop_out_no_norm$mast_re,
 
   # resc_out$mast_fe, resc_out$mast_re, resc_out$deseq,
-  resc_out_mast$mast_fe, resc_out_mast_cdr$mast_fe, resc_out_mast_ra$mast_re,
-  resc_out_mast_ra_cdr$mast_re, resc_out_deseq$deseq, resc_out_deseq_s$deseq,
+  resc_out_mast$mast_fe, resc_out_mast_cdr$mast_fe, resc_out_mast_cdr_nn$mast_fe,
+  resc_out_mast_ra$mast_re,resc_out_mast_ra_cdr$mast_re,
+  resc_out_deseq$deseq, resc_out_deseq_s$deseq,
 
 # resc_out_123$mast_fe, resc_out_123$mast_re, resc_out_123$deseq,
-  resc_out_123_mast$mast_fe, resc_out_123_mast_cdr$mast_fe, resc_out_123_mast_re$mast_re,
-  resc_out_123_mast_re_cdr$mast_re, resc_out_123_deseq$deseq, resc_out_123_deseq_s$deseq,
+  resc_out_123_mast$mast_fe, resc_out_123_mast_cdr$mast_fe, resc_out_123_mast_cdr_nn$mast_fe,
+resc_out_123_mast_re$mast_re,resc_out_123_mast_re_cdr$mast_re,
+resc_out_123_deseq$deseq, resc_out_123_deseq_s$deseq,
 
   # resc_out_111$mast_fe, resc_out_111$mast_re, resc_out_111$deseq,
   resc_out_111_mast$mast_fe, resc_out_111_mast_cdr$mast_fe,  resc_out_111_mast_cdr_nn$mast_fe,
-resc_out_111_mast_ra$mast_re, resc_out_111_mast_ra_cdr$mast_re, resc_out_111_mast_ra_cdr_nn$mast_re,
+resc_out_111_mast_ra$mast_re, resc_out_111_mast_ra_cdr$mast_re,
+# resc_out_111_mast_ra_cdr_nn$mast_re,
 resc_out_111_deseq$deseq, resc_out_111_deseq_s$deseq,
 
   # resc_out_222$mast_fe, resc_out_222$mast_re, resc_out_222$deseq,
   resc_out_222_mast$mast_fe, resc_out_222_mast_cdr$mast_fe, resc_out_222_mast_cdr_nn$mast_fe,
-resc_out_222_mast_ra$mast_re, resc_out_222_mast_ra_cdr$mast_re, resc_out_222_mast_ra_cdr_nn$mast_re,
+resc_out_222_mast_ra$mast_re, resc_out_222_mast_ra_cdr$mast_re,
+# resc_out_222_mast_ra_cdr_nn$mast_re,
 resc_out_222_deseq$deseq, resc_out_222_deseq_s$deseq,
 
   # resc_out_333$mast_fe, resc_out_333$mast_re, resc_out_333$deseq,
   resc_out_333_mast$mast_fe, resc_out_333_mast_cdr$mast_fe,  resc_out_333_mast_cdr_nn$mast_fe,
-resc_out_333_mast_ra$mast_re, resc_out_333_mast_ra_cdr$mast_re, resc_out_333_mast_ra_cdr_nn$mast_re,
+resc_out_333_mast_ra$mast_re, resc_out_333_mast_ra_cdr$mast_re,
+# resc_out_333_mast_ra_cdr_nn$mast_re,
 resc_out_333_deseq$deseq, resc_out_333_deseq_s$deseq,
   fill = TRUE
 )
@@ -1241,115 +1246,211 @@ pins::pin_write(
 )
 
 # GROUND TRUTH HIST -----------------------------------------------------------
-compute_mast_truth_interaction <- function(sce, analysis_name) {
+# compute_mast_truth_interaction <- function(sce, analysis_name) {
+#
+#   cts <- SingleCellExperiment::counts(sce)
+#   logCPM <- log2((1e6 * cts / colSums(cts)) + 1)
+#
+#   trt_eot  <- sce$group == "Treatment" & sce$time == "EoT"
+#   trt_base <- sce$group == "Treatment" & sce$time == "Baseline"
+#   ctl_eot  <- sce$group == "Placebo"   & sce$time == "EoT"
+#   ctl_base <- sce$group == "Placebo"   & sce$time == "Baseline"
+#
+#   truth <- rowMeans(logCPM[, trt_eot]) -
+#     rowMeans(logCPM[, trt_base]) -
+#     rowMeans(logCPM[, ctl_eot]) +
+#     rowMeans(logCPM[, ctl_base])
+#
+#   data.frame(
+#     gene = rownames(cts),
+#     true_logFC_MAST = truth,
+#     analysis = analysis_name
+#   )
+# }
+#
+# mast_truth_all <- dplyr::bind_rows(
+#   compute_mast_truth_interaction(sim_rescue,     "rescueSim"),
+#   compute_mast_truth_interaction(sim_rescue_111, "rescueSim_111"),
+#   compute_mast_truth_interaction(sim_rescue_222, "rescueSim_222"),
+#   compute_mast_truth_interaction(sim_rescue_333, "rescueSim_333"),
+#   compute_mast_truth_interaction(sim_rescue_123, "rescueSim_123")
+# )
+#
+# compare_data <- compare_data |>
+#   dplyr::left_join(
+#     mast_truth_all,
+#     by = c("gene", "analysis")
+#   )
+#
+# compare_data <- compare_data |>
+#   dplyr::mutate(
+#     true_logFC_used = dplyr::case_when(
+#       grepl("^MAST", method) ~ true_logFC_MAST,
+#       TRUE                   ~ true_logFC
+#     )
+#   )
+#
+#
+#
+# # Create a pin for how many of the genes where in the conf intervals for the
+# # rescuesim datasets
+#
+# summarise_ci_coverage <- function(df, conf_level = 0.95) {
+#
+#   z <- qnorm(1 - (1 - conf_level) / 2)
+#
+#   df <- df |>
+#     dplyr::filter(
+#       !is.na(true_logFC_used),
+#       is.finite(lfcSE),
+#       is.finite(log2FoldChange)
+#     ) |>
+#     dplyr::mutate(
+#       lower = log2FoldChange - z * lfcSE,
+#       upper = log2FoldChange + z * lfcSE,
+#       in_ci = true_logFC_used >= lower &
+#         true_logFC_used <= upper,
+#       regulation = dplyr::case_when(
+#         true_logFC_used > 0 ~ "up",
+#         true_logFC_used < 0 ~ "down",
+#         TRUE ~ "not_sig"
+#       )
+#     )
+#
+#   dplyr::tibble(
+#     total_genes = nrow(df),
+#     in_ci_total = sum(df$in_ci),
+#     total_up = sum(df$regulation == "up"),
+#     in_ci_up = sum(df$in_ci & df$regulation == "up"),
+#     total_down = sum(df$regulation == "down"),
+#     in_ci_down = sum(df$in_ci & df$regulation == "down"),
+#     total_not_sig = sum(df$regulation == "not_sig"),
+#     in_ci_not_sig = sum(df$in_ci & df$regulation == "not_sig")
+#   )
+# }
+#
+# ci_level <- 0.95
+#
+# rescue_ci_summary <- compare_data |>
+#   dplyr::filter(grepl("^rescueSim", analysis)) |>
+#   dplyr::group_by(analysis, method, formula) |>
+#   dplyr::group_modify(~ summarise_ci_coverage(.x, conf_level = ci_level)) |>
+#   dplyr::ungroup() |>
+#   dplyr::mutate(
+#     conf_level = ci_level,
+#     prop_ci_total    = in_ci_total / total_genes,
+#     prop_ci_up       = in_ci_up / total_up,
+#     prop_ci_down     = in_ci_down / total_down,
+#     prop_ci_not_sig  = in_ci_not_sig / total_not_sig
+#   )
+#
+#
+# board <- pins::board_local("nrgn-data")
+#
+# pins::pin_write(
+#   rescue_ci_summary,
+#   name = "rescueSim_ci_final",
+#   type = "rds",
+#   board = board,
+#   versioned = TRUE
+# )
 
-  cts <- SingleCellExperiment::counts(sce)
-  logCPM <- log2((1e6 * cts / colSums(cts)) + 1)
+# WITH BETA_C
+## --- Generic CI coverage (works for logFC OR betaC) --------------------------
 
-  trt_eot  <- sce$group == "Treatment" & sce$time == "EoT"
-  trt_base <- sce$group == "Treatment" & sce$time == "Baseline"
-  ctl_eot  <- sce$group == "Placebo"   & sce$time == "EoT"
-  ctl_base <- sce$group == "Placebo"   & sce$time == "Baseline"
+summarise_ci_coverage_effect <- function(
+    df,
+    effect = c("logFC", "betaC"),
+    conf_level = 0.95,
+    truth_col = "true_logFC"
+) {
+  effect <- match.arg(effect)
 
-  truth <- rowMeans(logCPM[, trt_eot]) -
-    rowMeans(logCPM[, trt_base]) -
-    rowMeans(logCPM[, ctl_eot]) +
-    rowMeans(logCPM[, ctl_base])
+  if (is.na(truth_col)) stop("No truth column found (expected true_logFC_used or true_logFC).")
 
-  data.frame(
-    gene = rownames(cts),
-    true_logFC_MAST = truth,
-    analysis = analysis_name
+  ## choose estimate + SE columns
+  cols <- switch(
+    effect,
+    logFC = list(est = "log2FoldChange", se = "lfcSE"),
+    betaC = list(est = "betaC",         se = "betaC_SE")
   )
-}
-
-mast_truth_all <- dplyr::bind_rows(
-  compute_mast_truth_interaction(sim_rescue,     "rescueSim"),
-  compute_mast_truth_interaction(sim_rescue_111, "rescueSim_111"),
-  compute_mast_truth_interaction(sim_rescue_222, "rescueSim_222"),
-  compute_mast_truth_interaction(sim_rescue_333, "rescueSim_333"),
-  compute_mast_truth_interaction(sim_rescue_123, "rescueSim_123")
-)
-
-compare_data <- compare_data |>
-  dplyr::left_join(
-    mast_truth_all,
-    by = c("gene", "analysis")
-  )
-
-compare_data <- compare_data |>
-  dplyr::mutate(
-    true_logFC_used = dplyr::case_when(
-      grepl("^MAST", method) ~ true_logFC_MAST,
-      TRUE                   ~ true_logFC
-    )
-  )
-
-
-
-# Create a pin for how many of the genes where in the conf intervals for the
-# rescuesim datasets
-
-summarise_ci_coverage <- function(df, conf_level = 0.95) {
 
   z <- qnorm(1 - (1 - conf_level) / 2)
 
-  df <- df |>
+  df2 <- df |>
     dplyr::filter(
-      !is.na(true_logFC_used),
-      is.finite(lfcSE),
-      is.finite(log2FoldChange)
+      !is.na(.data[[truth_col]]),
+      !is.na(.data[[cols$est]]),
+      !is.na(.data[[cols$se]]),
+      is.finite(.data[[cols$est]]),
+      is.finite(.data[[cols$se]]),
+      .data[[cols$se]] > 0
     ) |>
     dplyr::mutate(
-      lower = log2FoldChange - z * lfcSE,
-      upper = log2FoldChange + z * lfcSE,
-      in_ci = true_logFC_used >= lower &
-        true_logFC_used <= upper,
+      lower = .data[[cols$est]] - z * .data[[cols$se]],
+      upper = .data[[cols$est]] + z * .data[[cols$se]],
+      in_ci = .data[[truth_col]] >= lower & .data[[truth_col]] <= upper,
       regulation = dplyr::case_when(
-        true_logFC_used > 0 ~ "up",
-        true_logFC_used < 0 ~ "down",
+        .data[[truth_col]] > 0 ~ "up",
+        .data[[truth_col]] < 0 ~ "down",
         TRUE ~ "not_sig"
       )
     )
 
   dplyr::tibble(
-    total_genes = nrow(df),
-    in_ci_total = sum(df$in_ci),
-    total_up = sum(df$regulation == "up"),
-    in_ci_up = sum(df$in_ci & df$regulation == "up"),
-    total_down = sum(df$regulation == "down"),
-    in_ci_down = sum(df$in_ci & df$regulation == "down"),
-    total_not_sig = sum(df$regulation == "not_sig"),
-    in_ci_not_sig = sum(df$in_ci & df$regulation == "not_sig")
-  )
+    effect = effect,
+    conf_level = conf_level,
+    total_genes = nrow(df2),
+    in_ci_total = sum(df2$in_ci, na.rm = TRUE),
+    total_up = sum(df2$regulation == "up"),
+    in_ci_up = sum(df2$in_ci & df2$regulation == "up", na.rm = TRUE),
+    total_down = sum(df2$regulation == "down"),
+    in_ci_down = sum(df2$in_ci & df2$regulation == "down", na.rm = TRUE),
+    total_not_sig = sum(df2$regulation == "not_sig"),
+    in_ci_not_sig = sum(df2$in_ci & df2$regulation == "not_sig", na.rm = TRUE)
+  ) |>
+    dplyr::mutate(
+      prop_ci_total   = in_ci_total / total_genes,
+      prop_ci_up      = in_ci_up / total_up,
+      prop_ci_down    = in_ci_down / total_down,
+      prop_ci_not_sig = in_ci_not_sig / total_not_sig
+    )
 }
 
 ci_level <- 0.95
 
-rescue_ci_summary <- compare_data |>
+## --- Compute BOTH summaries and keep them together ---------------------------
+
+rescue_ci_summary_both <- compare_data |>
   dplyr::filter(grepl("^rescueSim", analysis)) |>
   dplyr::group_by(analysis, method, formula) |>
-  dplyr::group_modify(~ summarise_ci_coverage(.x, conf_level = ci_level)) |>
-  dplyr::ungroup() |>
-  dplyr::mutate(
-    conf_level = ci_level,
-    prop_ci_total    = in_ci_total / total_genes,
-    prop_ci_up       = in_ci_up / total_up,
-    prop_ci_down     = in_ci_down / total_down,
-    prop_ci_not_sig  = in_ci_not_sig / total_not_sig
-  )
+  dplyr::group_modify(~ {
+    out <- list()
 
+    ## logFC exists for MAST + DESeq2
+    if (all(c("log2FoldChange", "lfcSE") %in% names(.x))) {
+      out$logFC <- summarise_ci_coverage_effect(.x, effect = "logFC", conf_level = ci_level)
+    }
+
+    ## betaC only exists for MAST results (in your run_mast output)
+    if (all(c("betaC", "betaC_SE") %in% names(.x))) {
+      out$betaC <- summarise_ci_coverage_effect(.x, effect = "betaC", conf_level = ci_level)
+    }
+
+    dplyr::bind_rows(out)
+  }) |>
+  dplyr::ungroup()
+
+## --- Save one pin that contains BOTH effects --------------------------------
 
 board <- pins::board_local("nrgn-data")
 
 pins::pin_write(
-  rescue_ci_summary,
-  name = "rescueSim_ci_final",
+  rescue_ci_summary_both,
+  name = "rescueSim_ci_both",
   type = "rds",
   board = board,
   versioned = TRUE
 )
-
-# WITH BETA_C
 
 
