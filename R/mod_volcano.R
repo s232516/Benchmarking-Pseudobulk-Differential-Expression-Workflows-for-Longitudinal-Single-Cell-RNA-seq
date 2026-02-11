@@ -1,12 +1,3 @@
-#' mod_volcano UI Function
-#'
-#' @description A shiny Module.
-#'
-#' @param id Internal parameter for {shiny}.
-#'
-#' @noRd
-#'
-#' @importFrom shiny NS tagList
 mod_volcano_ui <- function(id) {
   ns <- shiny::NS(id)
 
@@ -16,7 +7,6 @@ mod_volcano_ui <- function(id) {
       width = 280,
       open = "always",
 
-      # ---- Sidebar ----
       sidebar = bslib::accordion(
         id = ns("tx_accordion"),
 
@@ -27,10 +17,7 @@ mod_volcano_ui <- function(id) {
           shiny::selectInput(
             inputId = ns("data"),
             label = bslib::tooltip(
-              trigger = shiny::tagList(
-                "Select dataset",
-                shiny::icon("circle-info")
-              ),
+              trigger = shiny::tagList("Select dataset", shiny::icon("circle-info")),
               "Select which dataset to analyse."
             ),
             choices = NULL
@@ -39,10 +26,7 @@ mod_volcano_ui <- function(id) {
           shiny::selectInput(
             inputId = ns("de_method"),
             label = bslib::tooltip(
-              trigger = shiny::tagList(
-                "Select DE method",
-                shiny::icon("circle-info")
-              ),
+              trigger = shiny::tagList("Select DE method", shiny::icon("circle-info")),
               "Select the differential expression method."
             ),
             choices = NULL
@@ -51,13 +35,21 @@ mod_volcano_ui <- function(id) {
           shiny::selectInput(
             inputId = ns("formula"),
             label = bslib::tooltip(
-              trigger = shiny::tagList(
-                "Select formula",
-                shiny::icon("circle-info")
-              ),
+              trigger = shiny::tagList("Select formula", shiny::icon("circle-info")),
               "Select the model formula."
             ),
             choices = NULL
+          ),
+
+          # NEW: normalization selector
+          shiny::selectInput(
+            inputId = ns("norm"),
+            label = bslib::tooltip(
+              trigger = shiny::tagList("Normalization", shiny::icon("circle-info")),
+              "Filter results by whether log-normalization was used (only applies when the 'norm' column exists)."
+            ),
+            choices = c("All" = "all"),   # server will update this
+            selected = "all"
           ),
 
           shiny::checkboxInput(
@@ -84,14 +76,12 @@ mod_volcano_ui <- function(id) {
         )
       ),
 
-      # ---- Main area ----
       bslib::layout_columns(
         col_widths = 12,
 
         div(
           style = "overflow-y: auto; padding-right: 10px; padding-left: 10px;",
 
-          # ---- Volcano plot ----
           bslib::card(
             style = "margin-bottom: 1rem;",
 
@@ -116,7 +106,6 @@ mod_volcano_ui <- function(id) {
             )
           ),
 
-          # ---- Table ----
           bslib::card(
             bslib::card_header("Volcano Plot Data Table"),
             bslib::card_body(
@@ -128,9 +117,8 @@ mod_volcano_ui <- function(id) {
     )
   )
 }
-#' mod_volcano Server Function
-#'
-#' @noRd
+
+
 mod_volcano_server <- function(input, output, session, data) {
 
   # ---- Update dataset selector ----
@@ -168,6 +156,29 @@ mod_volcano_server <- function(input, output, session, data) {
       choices = unique(df$formula),
       selected = unique(df$formula)[1]
     )
+
+    # ---- NEW: update norm choices depending on availability ----
+    if ("norm" %in% names(df) && any(!is.na(df$norm))) {
+      avail <- sort(unique(df$norm[!is.na(df$norm)]))  # logical TRUE/FALSE
+      choices <- c("All" = "all")
+      if (TRUE %in% avail)  choices <- c(choices, "Normalized" = "TRUE")
+      if (FALSE %in% avail) choices <- c(choices, "Not normalized" = "FALSE")
+
+      shiny::updateSelectInput(
+        session,
+        "norm",
+        choices = choices,
+        selected = "all"
+      )
+    } else {
+      # if this method has no norm column (e.g. DESeq2), keep only "All"
+      shiny::updateSelectInput(
+        session,
+        "norm",
+        choices = c("All" = "all"),
+        selected = "all"
+      )
+    }
   })
 
   # ---- Update logFC slider dynamically ----
@@ -176,49 +187,50 @@ mod_volcano_server <- function(input, output, session, data) {
       session,
       "logfc",
       min = 0,
-      max = round(
-        max(abs(data$log2FoldChange), na.rm = TRUE)
-      ),
+      max = round(max(abs(data$log2FoldChange), na.rm = TRUE)),
       value = 0,
       step = 0.01
     )
   })
 
   # ---- Volcano data ----
-  volcano_data <- reactive({
-    req(input$data, input$de_method, input$formula)
+  volcano_data <- shiny::reactive({
+    req(input$data, input$de_method, input$formula, input$norm)
 
-    data |>
+    df <- data |>
       dplyr::filter(
         analysis == input$data,
         method == input$de_method,
         formula == input$formula
-      ) |>
+      )
+
+    # ---- NEW: apply norm filter only if requested and column exists ----
+    if (input$norm != "all" && "norm" %in% names(df)) {
+      df <- df |>
+        dplyr::filter(norm == as.logical(input$norm))
+    }
+
+    df |>
       dplyr::mutate(
         neg_log10_pvalue = -log10(pvalue),
         is_true_de = trueDE == 1,
         significance = dplyr::case_when(
-          padj <= as.numeric(input$pvalue) &
-            log2FoldChange > input$logfc ~ "Upregulated",
-          padj <= as.numeric(input$pvalue) &
-            log2FoldChange < -input$logfc ~ "Downregulated",
+          padj <= as.numeric(input$pvalue) & log2FoldChange >  input$logfc ~ "Upregulated",
+          padj <= as.numeric(input$pvalue) & log2FoldChange < -input$logfc ~ "Downregulated",
           TRUE ~ "Not significant"
         )
       )
   })
 
-  # ---- Volcano plot object (single source of truth) ----
-  volcano_plot_obj <- reactive({
+  # ---- Volcano plot object ----
+  volcano_plot_obj <- shiny::reactive({
     df <- as.data.frame(volcano_data())
-
-    validate(
-      need(nrow(df) > 0, "No data available")
-    )
+    validate(shiny::need(nrow(df) > 0, "No data available"))
 
     max_es <- ceiling(max(abs(df$log2FoldChange), na.rm = TRUE))
     x_lims <- c(-max_es, max_es)
 
-    if (input$highlight_truede) {
+    if (isTRUE(input$highlight_truede)) {
       df$significance <- ifelse(df$is_true_de, "true DE", df$significance)
 
       counts <- df |>
@@ -231,10 +243,6 @@ mod_volcano_server <- function(input, output, session, data) {
         "Downregulated" = "#2166ac",
         "Not significant" = "#c0c0c0"
       )
-
-      labels <- paste0(names(counts), " (", counts, ")")
-      names(labels) <- names(counts)
-
     } else {
       counts <- df |>
         dplyr::count(significance) |>
@@ -245,27 +253,10 @@ mod_volcano_server <- function(input, output, session, data) {
         "Downregulated" = "#2166ac",
         "Not significant" = "#c0c0c0"
       )
-
-      labels <- paste0(names(counts), " (", counts, ")")
-      names(labels) <- names(counts)
-
     }
 
-    # smallest adjusted p-value among non-significant genes
-    padj_line <- df |>
-      dplyr::filter(
-       significance == "Not significant") |>
-      dplyr::select(padj,gene)
-    print(padj_line)
-    padj_line = min(padj_line$padj, na.rm = TRUE)
-    print(padj_line)
-
-
-    # handle edge case: all genes significant
-    if (length(padj_line) == 0 || is.na(padj_line)) {
-      padj_line <- NULL
-    }
-
+    labels <- paste0(names(counts), " (", counts, ")")
+    names(labels) <- names(counts)
 
     volcano_plot(
       data = df,
@@ -276,10 +267,9 @@ mod_volcano_server <- function(input, output, session, data) {
       color_labels = labels,
       labels = "gene",
       x_axis_title = "Effect size",
-      y_axis_title = "P-value Adjusted",
+      y_axis_title = "Adjusted p-value",
       plot_title = paste("Volcano Plot -", input$de_method),
       x_lims = x_lims,
-      hline = padj_line,
       vline = input$logfc,
       label_size = 5
     ) +
@@ -289,12 +279,10 @@ mod_volcano_server <- function(input, output, session, data) {
       )
   })
 
-  # ---- Render plot ----
   output$volcano_plot <- shiny::renderPlot({
     volcano_plot_obj()
   })
 
-  # ---- Table ----
   output$volcano_table <- DT::renderDT({
     DT::datatable(
       volcano_data(),
@@ -307,57 +295,22 @@ mod_volcano_server <- function(input, output, session, data) {
     )
   })
 
-  # ---- Desktop/plots directory ----
-  plots_dir <- file.path(
-    path.expand("~"),
-    "Desktop",
-    "plots"
-  )
-
-  if (!dir.exists(plots_dir)) {
-    dir.create(plots_dir, recursive = TRUE)
-  }
-
   # ---- Download ----
+  plots_dir <- file.path(path.expand("~"), "Desktop", "plots")
+  if (!dir.exists(plots_dir)) dir.create(plots_dir, recursive = TRUE)
+
   output$download_plot <- shiny::downloadHandler(
     filename = function() {
-      paste0(
-        "volcano_",
-        input$data, "_",
-        input$de_method, "_",
-        Sys.Date(),
-        ".png"
-      )
+      paste0("volcano_", input$data, "_", input$de_method, "_", Sys.Date(), ".png")
     },
     content = function(file) {
-
       desktop_file <- file.path(
         plots_dir,
-        paste0(
-          "volcano_",
-          input$data, "_",
-          input$de_method, "_",
-          Sys.Date(),
-          ".png"
-        )
+        paste0("volcano_", input$data, "_", input$de_method, "_", Sys.Date(), ".png")
       )
 
-      ggplot2::ggsave(
-        filename = desktop_file,
-        plot = volcano_plot_obj(),
-        width = 7,
-        height = 6,
-        dpi = 300
-      )
-
-      ggplot2::ggsave(
-        filename = file,
-        plot = volcano_plot_obj(),
-        width = 7,
-        height = 7,
-        dpi = 300
-      )
+      ggplot2::ggsave(desktop_file, plot = volcano_plot_obj(), width = 7, height = 6, dpi = 300)
+      ggplot2::ggsave(file,         plot = volcano_plot_obj(), width = 7, height = 7, dpi = 300)
     }
   )
 }
-
