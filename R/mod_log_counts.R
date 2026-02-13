@@ -178,8 +178,6 @@ mod_logfc_count_server <- function(input, output, session, data, sim) {
     sim <- simu()
     merged <- df |>
       dplyr::left_join(sim)
-    print("merged")
-    print(merged)
     merged
   })
 
