@@ -167,7 +167,6 @@ mod_logfc_count_server <- function(input, output, session, data, sim) {
       counts = Matrix::rowSums(counts),
       row.names = NULL
     )
-    print(df)
     df
   })
 
