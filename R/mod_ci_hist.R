@@ -154,12 +154,6 @@ mod_ci_hist_server <- function(input, output, session, data) {
         fill = "grey80",
         color = "grey30"
       ) +
-      ggplot2::geom_vline(
-        xintercept = x_vals,
-        color = "#C9980B",
-        linewidth = 1,
-        alpha = 0.8
-      ) +
       ggplot2::scale_x_continuous(
         breaks = x_vals,
         labels = round(x_vals, 3)
