@@ -72,7 +72,6 @@ summary(qc_rescue$libsize)
 qc_splat$cdr <- qc_splat$detected_genes / nrow(splatpop)  # 0..1
 summary(qc_splat$cdr)
 
-# MIRAR ESTO
 cor(qc_rescue$libsize, qc_rescue$detected_genes, method="spearman")
 cor(qc_splat$libsize, qc_splat$detected_genes, method="spearman")
 
@@ -91,17 +90,11 @@ gv_rescue <- gene_mean_var(rescueSim)
 
 
 par(mfrow=c(2,2))
-
-
-
-# Histogram + scatter/QC plots in the same style as your volcano module
-# (theme_bw, aspect.ratio=1, pretty breaks, pastel blue, point size = 3)
-
-# Pastel blue (you can change if you have a preferred one)
+# splatPop -------------------------------------------------------------------
 pastel_blue <- "#A6CEE3"
 
-# ---- 1) Histogram: library sizes (volcano-style) ----
-p_lib_hist <- ggplot2::ggplot(
+# Histogram: library sizes (volcano-style)
+p_lib_hist_splat <- ggplot2::ggplot(
   qc_splat,
   ggplot2::aes(x = libsize)
 ) +
@@ -125,8 +118,8 @@ p_lib_hist <- ggplot2::ggplot(
     text = ggplot2::element_text(size = 18)
   )
 
-# ---- 2) Detected genes vs UMIs ----
-p_detect_vs_umi <- ggplot2::ggplot(
+# Detected genes vs UMIs
+p_detect_vs_umi_splat <- ggplot2::ggplot(
   qc_splat,
   ggplot2::aes(x = libsize, y = detected_genes)
 ) +
@@ -149,8 +142,8 @@ p_detect_vs_umi <- ggplot2::ggplot(
     text = ggplot2::element_text(size = 18)
   )
 
-# ---- 3) Mean–variance (log-log) ----
-p_mean_var <- ggplot2::ggplot(
+# Mean–variance (log-log)
+p_mean_var_splat <- ggplot2::ggplot(
   gv_splat,
   ggplot2::aes(x = mean, y = var)
 ) +
@@ -172,8 +165,8 @@ p_mean_var <- ggplot2::ggplot(
     text = ggplot2::element_text(size = 18)
   )
 
-# ---- 4) Zeros vs mean (log-x) ----
-p_zero_vs_mean <- ggplot2::ggplot(
+# Zeros vs mean (log-x)
+p_zero_vs_mean_splat <- ggplot2::ggplot(
   gv_splat,
   ggplot2::aes(x = mean, y = zero_frac)
 ) +
@@ -194,20 +187,18 @@ p_zero_vs_mean <- ggplot2::ggplot(
     text = ggplot2::element_text(size = 18)
   )
 
-# Print
-p_lib_hist
-p_detect_vs_umi
-p_mean_var
-p_zero_vs_mean
+
+p_lib_hist_splat
+p_detect_vs_umi_splat
+p_mean_var_splat
+p_zero_vs_mean_splat
+# Rescue----------------------------------------------------------------------
 
 
-# Histogram + scatter/QC plots in the same style as your volcano module
-# (theme_bw, aspect.ratio=1, pretty breaks, pastel blue, point size = 3)
 
-# Pastel blue (you can change if you have a preferred one)
 pastel_blue <- "#A6CEE3"
 
-# ---- 1) Histogram: library sizes (volcano-style) ----
+#  Histogram: library sizes (volcano-style)
 p_lib_hist <- ggplot2::ggplot(
   qc_rescue,
   ggplot2::aes(x = libsize)
@@ -232,7 +223,7 @@ p_lib_hist <- ggplot2::ggplot(
     text = ggplot2::element_text(size = 18)
   )
 
-# ---- 2) Detected genes vs UMIs ----
+# Detected genes vs UMIs
 p_detect_vs_umi <- ggplot2::ggplot(
   qc_rescue,
   ggplot2::aes(x = libsize, y = detected_genes)
@@ -256,7 +247,7 @@ p_detect_vs_umi <- ggplot2::ggplot(
     text = ggplot2::element_text(size = 18)
   )
 
-# ---- 3) Mean–variance (log-log) ----
+# Mean–variance (log-log)
 p_mean_var <- ggplot2::ggplot(
   gv_rescue,
   ggplot2::aes(x = mean, y = var)
@@ -279,7 +270,7 @@ p_mean_var <- ggplot2::ggplot(
     text = ggplot2::element_text(size = 18)
   )
 
-# ---- 4) Zeros vs mean (log-x) ----
+# Zeros vs mean (log-x)
 p_zero_vs_mean <- ggplot2::ggplot(
   gv_rescue,
   ggplot2::aes(x = mean, y = zero_frac)
@@ -301,7 +292,7 @@ p_zero_vs_mean <- ggplot2::ggplot(
     text = ggplot2::element_text(size = 18)
   )
 
-# Print
+
 p_lib_hist
 p_detect_vs_umi
 p_mean_var
