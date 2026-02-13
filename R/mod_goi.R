@@ -93,7 +93,9 @@ mod_goi_server <- function(input, output, session, sce_list) {
     ns <- session$ns
 
     observe({
-      available <- intersect(names(sce_list), c("jan", "rescueSim"))
+      available <- setdiff(names(sce_list),
+                             grep("^splatpop(_\\d+)?$", names(sce_list),
+                                  value = TRUE))
       shiny::updateSelectInput(
         session,
         "analysis",
