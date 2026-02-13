@@ -10,9 +10,12 @@ app_server <- function(input, output, session) {
   board <- pins::board_local("nrgn-data")
 
   method_data  <- pins::pin_read(board, "method_data_final")
-  simulation <- pins::pin_read(board, "simulations")
+  simulation <- pins::pin_read(board, "simulations_final")
   compare <- pins::pin_read(board, "compare_data_final")
-  ci_data <- pins::pin_read(board, "rescueSim_ci_final")
+  # for normalized counts comment this line.
+  compare <- compare |>
+    dplyr::filter(.data$norm == TRUE | is.na(.data$norm))
+  ci_data <- pins::pin_read(board, "rescueSim_ci_real")
   ground_truth <- pins::pin_read(board, "ground_truth")
 
   # callModule(mod_overview_server, "overview", sim = sim_pop_cond)
@@ -28,5 +31,6 @@ app_server <- function(input, output, session) {
   callModule(mod_counts_hist_server, "ch_module", data = simulation)# done
   callModule(mod_filter_summary_server, "fs_module", compare_data = compare,
   ground_truth = ground_truth)
+  callModule(mod_es_compare_server, "fc", data = compare)
   # callModule(mod_de_heatmap_server, "de_heatmap", data = compare)
 }
