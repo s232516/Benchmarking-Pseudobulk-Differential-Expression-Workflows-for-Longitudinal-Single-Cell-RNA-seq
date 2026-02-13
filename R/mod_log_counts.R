@@ -83,12 +83,12 @@ mod_logfc_count_ui <- function(id) {
               )
             ),
             bslib::card_body(
-              div(
-                style = "width: 100%; height: 550px; overflow: hidden;",
-                shiny::plotOutput(ns("hist_logfc"),
-                  height = "550px",
-                  width = "100%"
-                )
+              style = "display = flex; justify-content: space-between;
+            align-items: center;",
+              shiny::plotOutput(
+                outputId = ns("hist_logfc"),
+                height = "550px",
+                width = "800px"
               )
             )
           )
@@ -159,7 +159,7 @@ mod_logfc_count_server <- function(input, output, session, data, sim) {
     counts <- counts[, , drop = FALSE]
 
     df <- data.frame(
-      gene  = ifelse(
+      gene = ifelse(
         grepl("^Gene", rownames(counts)),
         paste0("Gene_", readr::parse_number(rownames(counts))),
         rownames(counts)
@@ -192,19 +192,6 @@ mod_logfc_count_server <- function(input, output, session, data, sim) {
         x = "Count",
         y = "Log2 Fold Change"
       ) +
-      # ggrepel::geom_label_repel(
-      #   mapping =  ggplot2::aes(label = paste0(
-      #     "count=", counts,
-      #     "\nlogFC=", round(log2FoldChange, 2)
-      #   )),
-      #   size = 5,
-      #   hjust = 0.5,
-      #   vjust = 0.5,
-      #   max.overlaps = 50,
-      #   min.segment.length = grid::unit(0, "lines"),
-      #   alpha = 0.9,
-      #   show.legend = FALSE
-      # ) +
       ggplot2::theme_bw(base_size = 16) +
       ggplot2::theme(
         aspect.ratio = 1,
