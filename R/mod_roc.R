@@ -197,10 +197,10 @@ mod_roc_server <- function(input, output, session, data) {
         fdr = false_pos / discoveries
       )
 
-    df_fdr <- df |> dplyr::filter(fdr <= 0.05)
+    df_fdr <- df |> dplyr::filter(fdr <= 0.01)
 
     validate(
-      need(nrow(df_fdr) > 0, "No FDR ≤ 0.05 point available")
+      need(nrow(df_fdr) > 0, "No FDR ≤ 0.01 point available")
     )
 
     pt <- df_fdr |> dplyr::slice_tail(n = 1)
@@ -245,7 +245,7 @@ mod_roc_server <- function(input, output, session, data) {
           ggplot2::aes(
             x = FPR,
             y = TPR,
-            label = "FDR = 0.05"
+            label = "FDR = 0.01"
           ),
           hjust = -0.1,
           vjust = -0.5,
