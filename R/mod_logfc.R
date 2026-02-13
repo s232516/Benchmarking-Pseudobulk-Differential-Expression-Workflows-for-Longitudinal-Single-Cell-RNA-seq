@@ -439,29 +439,36 @@ mod_es_compare_server <- function(input, output, session, data) {
   # ----------------------------
   plots_dir <- file.path(path.expand("~"), "Desktop", "plots")
   if (!dir.exists(plots_dir)) dir.create(plots_dir, recursive = TRUE)
+  make_fname <- function() {
+    x_part <- if (identical(input$x_method, "True logFC")) {
+      "truth"
+    } else if (!is.null(input$x_formula) && input$x_formula != "na") {
+      paste0(gsub("\\s+", "_", input$x_method), "_", gsub("\\s+", "_", input$x_formula))
+    } else {
+      gsub("\\s+", "_", input$x_method)
+    }
+
+    y_part <- if (identical(input$y_method, "True logFC")) {
+      "truth"
+    } else if (!is.null(input$y_formula) && input$y_formula != "na") {
+      paste0(gsub("\\s+", "_", input$y_method), "_", gsub("\\s+", "_", input$y_formula))
+    } else {
+      gsub("\\s+", "_", input$y_method)
+    }
+
+    paste0("lfc_", input$data, "_", x_part, "_vs_", y_part, ".png")
+  }
 
   output$download_plot <- shiny::downloadHandler(
     filename = function() {
-      x_part <- if (identical(input$x_method, "True logFC")) {
-        "truth"
-      } else if (!is.null(input$x_formula) && input$x_formula != "na") {
-        paste0(gsub("\\s+", "_", input$x_method), "_", gsub("\\s+", "_", input$x_formula))
-      } else {
-        gsub("\\s+", "_", input$x_method)
-      }
-
-      y_part <- if (identical(input$y_method, "True logFC")) {
-        "truth"
-      } else if (!is.null(input$y_formula) && input$y_formula != "na") {
-        paste0(gsub("\\s+", "_", input$y_method), "_", gsub("\\s+", "_", input$y_formula))
-      } else {
-        gsub("\\s+", "_", input$y_method)
-      }
-
-      paste0("es_scatter_", input$data, "_", x_part, "_vs_", y_part, "_", Sys.Date(), ".png")
+      req(input$data, input$x_method, input$y_method)
+      make_fname()
     },
     content = function(file) {
-      desktop_file <- file.path(plots_dir, output$download_plot$filename())
+      req(scatter_plot_obj())
+
+      desktop_file <- file.path(plots_dir, make_fname())
+
       ggplot2::ggsave(desktop_file, plot = scatter_plot_obj(), width = 7, height = 7, dpi = 300)
       ggplot2::ggsave(file,         plot = scatter_plot_obj(), width = 7, height = 7, dpi = 300)
     }
