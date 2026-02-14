@@ -174,5 +174,51 @@ mod_hist_logfc_server <- function(input, output, session, data) {
           text = ggplot2::element_text(size = 18)
         )
     })
+
+    file_name <- reactive({
+      req(input$data, input$de_method, input$formula)
+      paste0(
+        "hist_log2FC__",
+        input$data, "__",
+        gsub("\\s+", "_", input$de_method),
+        ".png"
+      )
+    })
+
+
+
+    output$download_plot <- shiny::downloadHandler(
+      filename = function() {
+        file_name()
+      },
+      contentType = "image/png",
+      content = function(file) {
+        req(df(), input$bins)
+
+        df_local <- df()
+
+        plot1 <- ggplot2::ggplot(df_local, ggplot2::aes(x = log2FoldChange, fill = trueDE)) +
+          ggplot2::geom_histogram(
+            color = "black", alpha = 0.7, bins = input$bins,
+            position = "identity"
+          ) +
+          ggplot2::scale_fill_manual(values = c(`TRUE` = "red", `FALSE` = "steelblue")) +
+          ggplot2::labs(
+            title = "Histogram of log2 Fold Changes",
+            x = "Log2 Fold Change",
+            y = "Count",
+            fill = "True DE"
+          ) +
+          ggplot2::scale_x_continuous(breaks = scales::breaks_pretty(n = 10)) +
+          ggplot2::theme_bw(base_size = 16) +
+          ggplot2::theme(
+            aspect.ratio = 1,
+            text = ggplot2::element_text(size = 18)
+          )
+
+        ggplot2::ggsave(file, plot = plot1, width = 8, height = 6, dpi = 300)
+      }
+    )
+
 }
 
