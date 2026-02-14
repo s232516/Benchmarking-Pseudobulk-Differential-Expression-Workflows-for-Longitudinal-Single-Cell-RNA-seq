@@ -76,7 +76,9 @@ mod_ci_hist_ui <- function(id) {
             ),
 
             bslib::card_body(
-              shiny::plotOutput(ns("ci_hist_plot"), height = "550px")
+              shiny::plotOutput(ns("ci_hist_plot"),
+                                height = "550px",
+                                width = "800px")
             )
           )
         )
