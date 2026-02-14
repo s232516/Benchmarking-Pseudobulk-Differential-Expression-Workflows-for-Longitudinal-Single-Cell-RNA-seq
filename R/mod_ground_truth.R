@@ -170,50 +170,40 @@ mod_gt_server <- function(input, output, session, data) {
           (1 - as.numeric(input$conf_level)) / 2) * lfcSE
       )
   })
-
-  output$gt_plot <- shiny::renderPlot({
+  gt_plot_obj <- reactive({
     req(gt_data())
     df <- gt_data() |>
       dplyr::arrange(log2FoldChange) |>
       dplyr::mutate(gene = factor(gene, levels = gene))
 
-
-    ggplot2::ggplot(
-      df,
-      ggplot2::aes(
-        y = gene,
-        color = trueDE
-      )
-    ) +
-      # error bars for CIs
+    ggplot2::ggplot(df, ggplot2::aes(y = gene, color = trueDE)) +
       ggplot2::geom_errorbar(
         ggplot2::aes(xmin = lower, xmax = upper),
         width = 0.2,
         linewidth = 1.2
       ) +
-      ggplot2::geom_point(
-        ggplot2::aes(x = log2FoldChange),
-        size = 3
-      ) +
-      ggplot2::scale_color_manual(values = c(
-        `TRUE` = "red",
-        `FALSE` = "steelblue")
-        ) +
-      ggplot2::geom_point(
-        ggplot2::aes(x = true_logFC),
-        color = "#C9980B", size = 2
-      ) +
+      ggplot2::geom_point(ggplot2::aes(x = log2FoldChange), size = 3) +
+      ggplot2::geom_point(ggplot2::aes(x = true_logFC),
+                          color = "#C9980B", size = 2) +
+      ggplot2::scale_color_manual(values = c(`TRUE` = "red", `FALSE` = "steelblue")) +
       ggplot2::labs(
-        title = paste("", input$gene, "in", input$analysis),
-        x     = "Log2 Fold Change",
-        y     = "Genes"
+        title = paste0("Ground truth CI coverage — ", input$analysis),
+        subtitle = paste0("Method: ", input$method, " | Formula: ", input$formula,
+                          " | Level: ", as.numeric(input$conf_level) * 100, "%"),
+        x = "Log2 fold-change",
+        y = "Genes (labels hidden)"
       ) +
       ggplot2::theme_bw(base_size = 16) +
       ggplot2::theme(
         axis.text.x = ggplot2::element_text(angle = 30, hjust = 1),
+        axis.text.y = ggplot2::element_blank(),   # <-- hides gene labels
+        axis.ticks.y = ggplot2::element_blank(),  # <-- hides ticks too
         legend.position = "right",
         aspect.ratio = 1
       )
+  })
+  output$gt_plot <- shiny::renderPlot({
+    gt_plot_obj()
   })
 
   # ----------------------
@@ -265,30 +255,7 @@ mod_gt_server <- function(input, output, session, data) {
 
       ggplot2::ggsave(
         filename = file,
-        plot = ggplot2::ggplot(
-          df,
-          ggplot2::aes(y = gene)
-        ) +
-          ggplot2::geom_errorbar(
-            ggplot2::aes(xmin = lower, xmax = upper),
-            width = 0.2,
-            linewidth = 1.2,
-            color = "#C9980B"
-          ) +
-          ggplot2::geom_point(
-            ggplot2::aes(x = log2FoldChange),
-            color = "steelblue", size = 3
-          ) +
-          ggplot2::geom_point(
-            ggplot2::aes(x = true_logFC),
-            color = "", size = 2
-          ) +
-          ggplot2::labs(
-            title = paste("", input$gene, "in", input$analysis),
-            x     = "Log2 Fold Change",
-            y     = "Genes"
-          ) +
-          ggplot2::theme_bw(base_size = 16),
+        plot = gt_plot_obj(),
         width = 8,
         height = 8,
         dpi = 300
