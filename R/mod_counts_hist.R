@@ -1,10 +1,3 @@
-#' mod_counts_hist UI Function
-#'
-#' @description Histogram of raw and log-normalized counts.
-#'
-#' @param id Internal parameter for {shiny}.
-#'
-#' @noRd
 mod_counts_hist_ui <- function(id) {
   ns <- shiny::NS(id)
 
@@ -14,71 +7,48 @@ mod_counts_hist_ui <- function(id) {
       width = 280,
       open = "always",
 
-      # ---- Sidebar ----
       sidebar = bslib::accordion(
         id = ns("counts_accordion"),
-
         bslib::accordion_panel(
           title = "Counts histogram settings",
           icon = shiny::icon("sliders"),
 
-          shiny::selectInput(
-            ns("dataset"),
-            "Select simulation:",
-            choices = NULL
-          ),
+          shiny::selectInput(ns("dataset"), "Select simulation:", choices = NULL),
 
           shiny::radioButtons(
-            ns("scale"),
-            "Histogram scale:",
-            choices = c(
-              "Raw counts" = "raw",
-              "Log-normalized counts" = "lognorm"
-            ),
+            ns("scale"), "Histogram scale:",
+            choices = c("Raw counts" = "raw", "Log-normalized counts" = "lognorm"),
             selected = "raw"
           ),
 
-          shiny::sliderInput(
-            ns("bins"),
-            "Number of bins:",
-            min = 10, max = 200, value = 50
-          )
+          shiny::sliderInput(ns("bins"), "Number of bins:", min = 10, max = 200, value = 50)
         )
       ),
 
-      # ---- Main area ----
       bslib::layout_columns(
         col_widths = 12,
 
-        bslib::nav_panel(
-          title = "Counts distribution",
-          icon = shiny::icon("chart-bar"),
-
-          bslib::card(
-            bslib::card_header(
-              div(
-                style = "display:flex; justify-content:space-between; align-items:center;",
-                "Counts histogram",
-                shiny::downloadButton(
-                  outputId = ns("download_counts_hist"),
-                  label = "",
-                  class = "clickable-button-light"
-                )
-              )
-            ),
-
-            bslib::card_body(
-              shiny::plotOutput(
-                ns("counts_hist_plot"),
-                height = "550px"
+        bslib::card(
+          bslib::card_header(
+            div(
+              style = "display:flex; justify-content:space-between; align-items:center;",
+              "Counts histogram",
+              shiny::downloadButton(
+                outputId = ns("download_counts_hist"),
+                label = "",
+                class = "clickable-button-light"
               )
             )
+          ),
+          bslib::card_body(
+            shiny::plotOutput(ns("counts_hist_plot"), height = "550px", width = "100%")
           )
         )
       )
     )
   )
 }
+
 #' mod_counts_hist Server Function
 #'
 #' @noRd
