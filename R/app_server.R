@@ -6,27 +6,29 @@
 #' @noRd
 app_server <- function(input, output, session) {
   # load fixed data
-  data_path <- file.path('data','simData.rda')
-  if (!file.exists(data_path)) stop('data/simData.rda not found. Run R/data_prep.R first.')
-  load(data_path) # provides sim.pop.cond, mast_res, deseq_res
 
+  board <- pins::board_local("nrgn-data")
+  simulation <- pins::pin_read(board, "simulations_final")
+  compare <- pins::pin_read(board, "compare_data_final")
+  # for normalized counts comment this line.
+  compare <- compare |>
+    dplyr::filter(.data$norm == TRUE | is.na(.data$norm))
+  ci_data <- pins::pin_read(board, "rescueSim_ci_real")
+  ground_truth <- pins::pin_read(board, "ground_truth_final")
 
-  # make a small data list for modules
-  shared <- reactiveValues(
-    sim = sim.pop.cond,
-    mast = mast_res,
-    deseq = deseq_res
-  )
-
-
-  callModule(mod_overview_server, 'overview_1', shared = shared)
-  callModule(mod_pca_server, 'pca_1', shared = shared, colorBy = reactive(input$colorBy))
-  callModule(mod_umap_server, 'umap_1', shared = shared, colorBy = reactive(input$colorBy))
-  callModule(mod_volcano_server, 'volcano_1', shared = shared)
+  # callModule(mod_overview_server, "overview", sim = sim_pop_cond)
+  callModule(mod_dr_server, "dim_red", data = simulation)
+  callModule(mod_volcano_server, "volcano", data = compare) # done
+  callModule(mod_roc_server, "roc", data = compare) # norm
+  callModule(mod_gt_server, "gt", data = compare)
+  callModule(mod_hist_logfc_server, "hist_module", data = compare)
+  callModule(mod_ci_hist_server, "ci_module", data = ci_data)
+  callModule(mod_goi_server, "goi", sce_list = simulation) # done
+  callModule(mod_logfc_count_server, "lc_module", data = compare,
+             sim = simulation)
+  callModule(mod_counts_hist_server, "ch_module", data = simulation)# done
+  callModule(mod_filter_summary_server, "fs_module", compare_data = compare,
+  ground_truth = ground_truth)
+  callModule(mod_es_compare_server, "fc", data = compare)
+  # callModule(mod_de_heatmap_server, "de_heatmap", data = compare)
 }
-
-
-# To run interactively without golem packaging
-# if (interactive()) {
-#   shiny::shinyApp(ui = app_ui, server = app_server)
-# }
