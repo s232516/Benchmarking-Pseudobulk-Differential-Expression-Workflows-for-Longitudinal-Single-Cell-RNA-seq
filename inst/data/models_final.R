@@ -2,10 +2,6 @@ library(BiocParallel)
 # Methods ----------------------------------------------------------------------
 ## MAST ------------------------------------------------------------------------
 run_mast <- function(
-    library(BiocParallel)
-    # Methods ----------------------------------------------------------------------
-    ## MAST ------------------------------------------------------------------------
-    run_mast <- function(
     sce,
     formula = ~Condition,
     lrt = "ConditionTreatment",
@@ -498,6 +494,37 @@ run_mast <- function(
         norm = norm)
     }
 
+    pipeline_rescue_and_methods <- function(
+    sce,
+    run_mast_fe = TRUE,
+    run_mast_re = TRUE,
+    run_deseq = TRUE,
+    design_formula_mast = ~ group * time + cngeneson,
+    design_formula_mast_rand = ~ group * time + cngeneson + (1 | sampleID),
+    design_formula_deseq = ~ group * time,
+    lrt_term = "groupTreatment:timeEoT",
+    lrt_term_deseq = "groupTreatment.timeEoT",
+    relevel = list(group = "Placebo", time = "Baseline"),
+    norm = TRUE
+    ) {
+      rescue_results <- run_methods(
+        sce = sce,
+        sample_var = "sampleID",
+        design_formula_mast = design_formula_mast,
+        design_formula_mast_rand = design_formula_mast_rand,
+        design_formula_deseq = design_formula_deseq,
+        lrt_term = lrt_term,
+        lrt_term_deseq = lrt_term_deseq,
+        ids_vars = c("subjectID", "time"),
+        relevel = list(group = "Placebo", time = "Baseline"),
+        run_mast_fe = run_mast_fe,
+        run_mast_re = run_mast_re,
+        run_deseq = run_deseq,
+        norm = norm
+      )
+
+      rescue_results
+    }
 
 # Run Simulations  -------------------------------------------------------------
 # Read pins with simulations
@@ -715,7 +742,7 @@ resc_out_123_mast_cdr_nn <- pipeline_rescue_and_methods(
 #### MAST random only ----------------------------------------------------------
 
 resc_out_123_mast_re <- pipeline_rescue_and_methods(
-  sce = sim_rescue_ref_123,
+  sce = sim_rescue_123,
   run_mast_fe = FALSE,
   run_mast_re = TRUE,
   run_deseq = FALSE,
@@ -725,14 +752,14 @@ resc_out_123_mast_re <- pipeline_rescue_and_methods(
   lrt_term = "timeEoT:groupTreatment"
 )
 resc_out_123_mast_re_cdr <- pipeline_rescue_and_methods(
-  sce = sim_rescue_123,
+  sce = sim_rescue_ref_123,
   run_mast_fe = FALSE,
   run_mast_re = TRUE,
   run_deseq = FALSE,
   design_formula_mast_rand =
-    ~ group * time + subjectID + cngeneson +
+    ~ time + group:time + subjectID + cngeneson +
       (1 | sampleID),
-  lrt_term = "groupTreatment:timeEoT"
+  lrt_term = "timeEoT:groupTreatment"
 )
 
 resc_out_123_mast_re_cdr_nn <- pipeline_rescue_and_methods(
@@ -1156,8 +1183,8 @@ resc_out_123_norm_mast_cdr <- pipeline_rescue_and_methods(
 resc_out_123_norm_mast_re_cdr <- pipeline_rescue_and_methods(
   sce = sim_rescue_ref_123_norm,
   run_mast_fe = FALSE, run_mast_re = TRUE, run_deseq = FALSE,
-  design_formula_mast_rand = ~ group * time + subjectID + cngeneson + (1 | sampleID),
-  lrt_term = "groupTreatment:timeEoT",
+  design_formula_mast_rand = ~ time + group:time + subjectID + cngeneson + (1 | sampleID),
+  lrt_term = "timeEoT:groupTreatment",
   norm = TRUE
 )
 
@@ -1437,14 +1464,14 @@ resc_out_333_mast_ra$mast_re, resc_out_333_mast_ra_cdr$mast_re,
 # resc_out_333_mast_ra_cdr_nn$mast_re,
 resc_out_333_deseq$deseq, resc_out_333_deseq_s$deseq,
 
-resc_out_norm_mast_cdr, resc_out_norm_mast_ra_cdr,
-resc_out_norm_deseq_s, resc_out_123_norm_mast_cdr,
-resc_out_123_norm_mast_re_cdr,resc_out_123_norm_deseq_s,
-resc_out_111_norm_mast_cdr, resc_out_111_norm_mast_ra_cdr,
-resc_out_111_norm_deseq_s, resc_out_222_norm_mast_cdr,
-resc_out_222_norm_mast_ra_cdr, resc_out_222_norm_deseq_s,
-resc_out_333_norm_mast_cdr, resc_out_333_norm_mast_ra_cdr,
-resc_out_333_norm_deseq_s,
+resc_out_norm_mast_cdr$mast_fe, resc_out_norm_mast_ra_cdr$mast_re,
+resc_out_norm_deseq_s$deseq, resc_out_123_norm_mast_cdr$mast_fe,
+resc_out_123_norm_mast_re_cdr$mast_re,resc_out_123_norm_deseq_s$deseq,
+resc_out_111_norm_mast_cdr$mast_fe, resc_out_111_norm_mast_ra_cdr$mast_re,
+resc_out_111_norm_deseq_s$deseq, resc_out_222_norm_mast_cdr$mast_fe,
+resc_out_222_norm_mast_ra_cdr$mast_re, resc_out_222_norm_deseq_s$deseq,
+resc_out_333_norm_mast_cdr$mast_fe, resc_out_333_norm_mast_ra_cdr$mast_re,
+resc_out_333_norm_deseq_s$deseq,
 
   fill = TRUE
 )
@@ -1462,14 +1489,8 @@ pins::pin_write(method_data,
 # Merge ground_truth with method data:
 
 method_data <- pins::pin_read(board, "method_data_final")
-ground_truth <- pins::pin_read(board, "ground_truth")
 
-method_data$analysis <- gsub(
-  pattern = "rescueSim \\((\\d+)\\)",
-  replacement = "rescueSim_\\1",
-  method_data$analysis
-)
-
+ground_truth <- pins::pin_read(board, "ground_truth_final")
 
 method_data <- method_data |>
   dplyr::mutate(
@@ -1555,45 +1576,66 @@ summarise_ci_coverage <- function(df, conf_level = 0.99) {
   )
 }
 
-ci_level <- 0.99 # you can loop over several if you want
+ci_level <- 0.99
 
-rescue_ci_summary <- compare_data |>
-  dplyr::filter(grepl("^rescueSim", analysis)) |>
-  dplyr::group_by(analysis, method, formula) |>
-  dplyr::group_modify(~ summarise_ci_coverage(.x, conf_level = ci_level)) |>
-  dplyr::ungroup() |>
-  dplyr::mutate(conf_level = ci_level)
+compute_ci_summary <- function(compare_data, analyses, analysis_key = "analysis", ci_level = 0.99) {
 
-rescue_ci_summary <- rescue_ci_summary |>
-  dplyr::mutate(
-    prop_ci_total    = in_ci_total / total_genes,
-    prop_ci_up       = in_ci_up / total_up,
-    prop_ci_down     = in_ci_down / total_down,
-    prop_ci_not_sig  = in_ci_not_sig / total_not_sig
-  )
+  compare_data |>
+    dplyr::filter(.data[[analysis_key]] %in% analyses) |>
+    dplyr::group_by(.data[[analysis_key]], method, formula) |>
+    dplyr::group_modify(~ summarise_ci_coverage(.x, conf_level = ci_level)) |>
+    dplyr::ungroup() |>
+    dplyr::rename(analysis = .data[[analysis_key]]) |>
+    dplyr::mutate(
+      conf_level = ci_level,
+      prop_ci_total   = in_ci_total / total_genes,
+      prop_ci_up      = dplyr::if_else(total_up > 0,
+                                       in_ci_up / total_up,
+                                       NA_real_),
+      prop_ci_down    = dplyr::if_else(total_down > 0,
+                                       in_ci_down / total_down,
+                                       NA_real_),
+      prop_ci_not_sig = dplyr::if_else(total_not_sig > 0,
+                                       in_ci_not_sig / total_not_sig,
+                                       NA_real_)
+    )
+}
 
-## splatpop --------------------------------------------------------------------
+# if you used the join-key names like "splatpop_11", "rescueSim_123 norm", etc.
+splat_analyses <- c("splatpop", "splatpop_11", "splatpop_22", "splatpop_33",
+                    "splatpop_44")
 
-ci_level <- 0.99 # you can loop over several if you want
+rescue_analyses <- c("rescueSim", "rescueSim_123", "rescueSim_111",
+                     "rescueSim_222", "rescueSim_333")
 
-splat_ci_summary <- compare_data |>
-  dplyr::filter(analysis == "splatpop") |>
-  dplyr::group_by(analysis, method, formula) |>
-  dplyr::group_modify(~ summarise_ci_coverage(.x, conf_level = ci_level)) |>
-  dplyr::ungroup() |>
-  dplyr::mutate(conf_level = ci_level)
+rescue_norm_analyses <- c(
+  "rescueSim norm",
+  "rescueSim_123 norm",
+  "rescueSim_111 norm",
+  "rescueSim_222 norm",
+  "rescueSim_333 norm"
+)
 
-splat_ci_summary <- splat_ci_summary |>
-  dplyr::mutate(
-    prop_ci_total    = in_ci_total / total_genes,
-    prop_ci_up       = in_ci_up / total_up,
-    prop_ci_down     = in_ci_down / total_down,
-    prop_ci_not_sig  = in_ci_not_sig / total_not_sig
-  )
+splat_ci_summary <- compute_ci_summary(compare_data,
+                                             splat_analyses,
+                                             analysis_key = "analysis_join",
+                                             ci_level = ci_level)
+splat_ci_summary$sim <- "splatpop"
 
+rescue_ci_summary <- compute_ci_summary(compare_data, rescue_analyses,
+                                             analysis_key = "analysis_join",
+                                             ci_level = ci_level)
+rescue_ci_summary$sim <- "rescueSim"
+rescue_norm_ci_summary <- compute_ci_summary(compare_data,
+                                             rescue_norm_analyses,
+                                             analysis_key = "analysis_join",
+                                             ci_level = ci_level)
+
+
+rescue_norm_ci_summary$sim <- "rescuesim norm"
 
 ## merge dataframes ------------------------------------------------------------
-ci_data <- rbind(splat_ci_summary, rescue_ci_summary)
+ci_data <- rbind(splat_ci_summary, rescue_ci_summary, rescue_norm_ci_summary)
 
 board <- pins::board_local("nrgn-data")
 

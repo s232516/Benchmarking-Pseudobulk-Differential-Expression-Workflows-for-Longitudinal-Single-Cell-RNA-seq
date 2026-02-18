@@ -30,6 +30,12 @@ mod_dr_ui <- function(id) {
               "Select the dataset used for dimensionality reduction."
             ),
             choices = character(0)
+          ),
+          shiny::selectInput(
+            inputId = ns("colour_by"),
+            label   = "Colour by",
+            choices = c("Condition", "Sample", "sampleID", "subjectID"),
+            selected = "Condition"
           )
         )
       ),
@@ -115,7 +121,7 @@ mod_dr_server <- function(input, output, session, data) {
 
     scater::plotPCA(
       dr_df(),
-      colour_by = "Condition",
+      colour_by = input$colour_by,
       point_size = 3
     ) +
       ggplot2::theme_bw() +
@@ -132,7 +138,7 @@ mod_dr_server <- function(input, output, session, data) {
 
     scater::plotUMAP(
       dr_df(),
-      colour_by = "Condition",
+      colour_by = input$colour_by,
       point_size = 3
     ) +
       ggplot2::theme_bw() +

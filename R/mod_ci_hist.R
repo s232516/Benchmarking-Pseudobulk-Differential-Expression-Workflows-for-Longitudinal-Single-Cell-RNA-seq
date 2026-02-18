@@ -1,12 +1,3 @@
-#' mod_ci_hist UI Function
-#'
-#' @description A shiny Module for CI coverage histograms.
-#'
-#' @param id Internal parameter for {shiny}.
-#'
-#' @noRd
-#'
-#' @importFrom shiny NS tagList
 mod_ci_hist_ui <- function(id) {
   ns <- shiny::NS(id)
 
@@ -22,6 +13,17 @@ mod_ci_hist_ui <- function(id) {
         bslib::accordion_panel(
           title = "CI coverage settings",
           icon = shiny::icon("sliders"),
+
+          shiny::selectInput(
+            ns("analysis_group"),
+            "Select dataset:",
+            choices = c(
+              "splatPop"        = "splatpop",
+              "rescueSim"       = "rescueSim",
+              "rescueSim (norm)" = "rescueSim_norm"
+            ),
+            selected = "rescueSim"
+          ),
 
           shiny::selectInput(
             ns("method"),
@@ -66,7 +68,7 @@ mod_ci_hist_ui <- function(id) {
             bslib::card_header(
               div(
                 style = "display:flex; justify-content:space-between; align-items:center;",
-                "RescueSim CI coverage",
+                shiny::textOutput(ns("ci_hist_header"), inline = TRUE),
                 shiny::downloadButton(
                   outputId = ns("download_ci_hist"),
                   label = "Download",
@@ -76,9 +78,11 @@ mod_ci_hist_ui <- function(id) {
             ),
 
             bslib::card_body(
-              shiny::plotOutput(ns("ci_hist_plot"),
-                                height = "550px",
-                                width = "800px")
+              shiny::plotOutput(
+                ns("ci_hist_plot"),
+                height = "550px",
+                width = "800px"
+              )
             )
           )
         )
@@ -87,21 +91,42 @@ mod_ci_hist_ui <- function(id) {
   )
 }
 
-#' mod_ci_hist Server Functions
-#'
-#' @noRd
 mod_ci_hist_server <- function(input, output, session, data) {
 
-  # ---- Only rescueSim datasets ----
-  rescue_data <- reactive({
-    data |>
-      dplyr::filter(grepl("^rescueSim", analysis))
+  # --- Map selection -> filter rule ---
+  filtered_data <- shiny::reactive({
+    shiny::req(input$analysis_group)
+
+    d <- data
+
+    if (input$analysis_group == "splatpop") {
+      d <- dplyr::filter(d, grepl("^splatpop", analysis))
+    } else if (input$analysis_group == "rescueSim") {
+      # exclude norm
+      d <- dplyr::filter(d, grepl("^rescueSim", analysis) & !grepl("\\(norm\\)", analysis))
+    } else if (input$analysis_group == "rescueSim_norm") {
+      d <- dplyr::filter(d, grepl("^rescueSim", analysis) & grepl("\\norm\\", analysis))
+    }
+    print(d)
+
+    d
   })
 
-  # ---- Populate method selector ----
-  observe({
-    df <- rescue_data()
-    req(nrow(df) > 0)
+  # --- Header text (dynamic) ---
+  output$ci_hist_header <- shiny::renderText({
+    shiny::req(input$analysis_group)
+    switch(
+      input$analysis_group,
+      "splatpop" = "splatPop CI coverage",
+      "rescueSim" = "rescueSim CI coverage",
+      "rescueSim_norm" = "rescueSim (norm) CI coverage"
+    )
+  })
+
+  # --- Populate method selector ---
+  shiny::observe({
+    df <- filtered_data()
+    shiny::req(nrow(df) > 0)
 
     shiny::updateSelectInput(
       session,
@@ -111,11 +136,11 @@ mod_ci_hist_server <- function(input, output, session, data) {
     )
   })
 
-  # ---- Populate formula selector ----
-  observeEvent(input$method, {
-    req(input$method)
+  # --- Populate formula selector ---
+  shiny::observeEvent(input$method, {
+    shiny::req(input$method)
 
-    df <- rescue_data() |>
+    df <- filtered_data() |>
       dplyr::filter(method == input$method)
 
     shiny::updateSelectInput(
@@ -126,11 +151,13 @@ mod_ci_hist_server <- function(input, output, session, data) {
     )
   })
 
-  # ---- Filtered dataset used for plotting ----
-  plot_data <- reactive({
-    req(input$method, input$formula, input$metric)
+  # --- Filtered dataset used for plotting ---
+  plot_data <- shiny::reactive({
+    shiny::req(input$method, input$formula, input$metric)
+    print('hola')
+    print(filtered_data())
 
-    rescue_data() |>
+    filtered_data() |>
       dplyr::filter(
         method == input$method,
         formula == input$formula
@@ -142,13 +169,26 @@ mod_ci_hist_server <- function(input, output, session, data) {
       dplyr::filter(!is.na(value))
   })
 
-  # ---- Plot object (single source of truth) ----
-  ci_hist_plot_obj <- reactive({
+  # --- Plot object ---
+  ci_hist_plot_obj <- shiny::reactive({
     df <- plot_data()
-    validate(need(nrow(df) > 0, "No data available for this selection."))
+    shiny::validate(shiny::need(nrow(df) > 0, "No data available for this selection."))
 
-    # exact x values present in the data
     x_vals <- sort(unique(df$value))
+
+    n_label <- switch(
+      input$analysis_group,
+      "splatpop" = "Number of splatPop datasets",
+      "rescueSim" = "Number of rescueSim datasets",
+      "rescueSim_norm" = "Number of rescueSim (norm) datasets"
+    )
+
+    title_prefix <- switch(
+      input$analysis_group,
+      "splatpop" = "CI coverage distribution – splatPop",
+      "rescueSim" = "CI coverage distribution – rescueSim",
+      "rescueSim_norm" = "CI coverage distribution – rescueSim (norm)"
+    )
 
     ggplot2::ggplot(df, ggplot2::aes(x = value)) +
       ggplot2::geom_histogram(
@@ -162,34 +202,32 @@ mod_ci_hist_server <- function(input, output, session, data) {
       ) +
       ggplot2::labs(
         x = "CI coverage proportion",
-        y = "Number of rescueSim datasets",
-        title = paste("CI coverage distribution –", input$metric)
+        y = n_label,
+        title = paste(title_prefix, "(", input$metric, ")")
       ) +
-      ggplot2::theme_bw(base_size = 16)  +
+      ggplot2::theme_bw(base_size = 16) +
       ggplot2::theme(
         aspect.ratio = 1,
         text = ggplot2::element_text(size = 18),
-        axis.text.x = ggplot2::element_text(
-          angle = 45,
-          hjust = 1
-        )
+        axis.text.x = ggplot2::element_text(angle = 45, hjust = 1)
       )
   })
 
-  # ---- Render ----
+  # --- Render ---
   output$ci_hist_plot <- shiny::renderPlot({
     ci_hist_plot_obj()
   })
 
-  # ---- Desktop/plots directory ----
+  # --- Desktop/plots directory ---
   plots_dir <- file.path(path.expand("~"), "Desktop", "plots")
   if (!dir.exists(plots_dir)) dir.create(plots_dir, recursive = TRUE)
 
-  # ---- Download ----
+  # --- Download ---
   output$download_ci_hist <- shiny::downloadHandler(
     filename = function() {
       paste0(
         "ci_hist_",
+        input$analysis_group, "_",
         input$method, "_",
         gsub("[^A-Za-z0-9_]+", "_", input$formula), "_",
         input$metric, "_",
@@ -203,6 +241,7 @@ mod_ci_hist_server <- function(input, output, session, data) {
         plots_dir,
         paste0(
           "ci_hist_",
+          input$analysis_group, "_",
           input$method, "_",
           gsub("[^A-Za-z0-9_]+", "_", input$formula), "_",
           input$metric, "_",
@@ -211,21 +250,8 @@ mod_ci_hist_server <- function(input, output, session, data) {
         )
       )
 
-      ggplot2::ggsave(
-        filename = desktop_file,
-        plot = ci_hist_plot_obj(),
-        width = 8,
-        height = 6,
-        dpi = 300
-      )
-
-      ggplot2::ggsave(
-        filename = file,
-        plot = ci_hist_plot_obj(),
-        width = 8,
-        height = 6,
-        dpi = 300
-      )
+      ggplot2::ggsave(desktop_file, ci_hist_plot_obj(), width = 8, height = 6, dpi = 300)
+      ggplot2::ggsave(file,         ci_hist_plot_obj(), width = 8, height = 6, dpi = 300)
     }
   )
 }

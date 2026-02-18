@@ -31,17 +31,17 @@ mod_filter_summary_server <- function(input, output, session,
 
   # ---- Safety checks ----
   stopifnot(is.list(ground_truth))
-  stopifnot(all(c("analysis", "method", "formula", "gene", "trueDE") %in%
+  stopifnot(all(c("analysis_join", "method", "formula", "gene", "trueDE") %in%
                   colnames(compare_data)))
 
   # ---- Core computation ----
   filter_summary <- reactive({
 
     compare_data |>
-      dplyr::group_by(analysis, method, formula) |>
+      dplyr::group_by(analysis_join, method, formula) |>
       dplyr::group_modify(function(df, keys) {
 
-        sim <- keys$analysis
+        sim <- keys$analysis_join
 
         # Ground truth for this simulation
         gt <- ground_truth[[sim]]
