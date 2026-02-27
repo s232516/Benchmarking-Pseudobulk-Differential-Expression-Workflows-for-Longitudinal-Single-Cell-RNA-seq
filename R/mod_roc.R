@@ -184,34 +184,27 @@ mod_roc_server <- function(input, output, session, data) {
     )
   })
 
-  # ---- FDR = 0.05 operating point ----
   roc_fdr05_point <- reactive({
     df <- rocpr_data()
+    alpha <- 0.01
 
     df <- df |>
-      dplyr::arrange(padj) |>
       dplyr::mutate(
-        discoveries = dplyr::row_number(),
-        false_pos = cumsum(trueDE == 0),
-        true_pos  = cumsum(trueDE == 1),
-        fdr = false_pos / discoveries
+        methodDE = !is.na(padj) & padj <= alpha,
+        truepos  = (trueDE == 1) & methodDE,
+        falsepos = (trueDE == 0) & methodDE
       )
 
-    df_fdr <- df |> dplyr::filter(fdr <= 0.01)
+    n_pos <- sum(df$trueDE == 1, na.rm = TRUE)
+    n_neg <- sum(df$trueDE == 0, na.rm = TRUE)
 
-    validate(
-      need(nrow(df_fdr) > 0, "No FDR ≤ 0.01 point available")
-    )
-
-    pt <- df_fdr |> dplyr::slice_tail(n = 1)
-
-    n_pos <- sum(df$trueDE == 1)
-    n_neg <- sum(df$trueDE == 0)
+    tp <- sum(df$truepos,  na.rm = TRUE)
+    fp <- sum(df$falsepos, na.rm = TRUE)
 
     tibble::tibble(
-      FPR = pt$false_pos / n_neg,
-      TPR = pt$true_pos  / n_pos,
-      padj = pt$padj
+      FPR  = fp / n_neg,
+      TPR  = tp / n_pos,
+      padj = alpha
     )
   })
 
