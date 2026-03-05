@@ -381,41 +381,44 @@ mod_es_compare_server <- function(input, output, session, data) {
     y_needs_formula <- (!identical(input$y_method, "True logFC")) && has_formula_for_method(df_base, input$y_method)
 
     x_label <- if (identical(input$x_method, "True logFC")) {
-      "Effect size (log2FC) — True logFC"
-    } else if (x_needs_formula) {
-      paste0("Effect size (log2FC) — ", input$x_method, " | ", input$x_formula)
+      "Effect size (log2FC): True logFC"
     } else {
-      paste0("Effect size (log2FC) — ", input$x_method)
+      paste0("Effect size (log2FC): ", input$x_method)
     }
 
     y_label <- if (identical(input$y_method, "True logFC")) {
-      "Effect size (log2FC) — True logFC"
-    } else if (y_needs_formula) {
-      paste0("Effect size (log2FC) — ", input$y_method, " | ", input$y_formula)
-    } else {
-      paste0("Effect size (log2FC) — ", input$y_method)
+      "Effect size (log2FC): True logFC"
+    }  else {
+      paste0("Effect size (log2FC): ", input$y_method)
     }
 
     ggplot2::ggplot(df, ggplot2::aes(x = logfc_x, y = logfc_y)) +
       ggplot2::geom_hline(yintercept = 0, linetype = "dashed", alpha = 0.4) +
       ggplot2::geom_vline(xintercept = 0, linetype = "dashed", alpha = 0.4) +
-      ggplot2::geom_point(ggplot2::aes(color = color_group), alpha = 0.85, size = 2) +
+      ggplot2::geom_point(ggplot2::aes(color = color_group), alpha = 0.85,
+                          size = 2) +
       ggplot2::scale_color_manual(
         values = c("true DE" = "#C9980B", "other" = "#c0c0c0"),
         breaks = c("true DE", "other"),
         labels = c("True DE", "Other")
       ) +
       ggplot2::labs(
-        title = "Effect size comparison",
-        subtitle = paste0("X: ", input$x_method, " | Y: ", input$y_method),
         x = x_label,
         y = y_label,
         color = NULL
       ) +
+      ggplot2::geom_abline(slope = 1, intercept = 0, color = "black",
+                           linetype = "dashed", size = 1) +
       ggplot2::coord_equal() +
       ggplot2::theme_bw(base_size = 16) +
-      ggplot2::theme(legend.position = "right",
-                     aspect.ratio = 1)
+      ggplot2::theme(
+                     aspect.ratio = 1,
+                     axis.title.x = ggplot2::element_text(size = 25),
+                     axis.title.y = ggplot2::element_text(size = 25),
+                     axis.text.x  = ggplot2::element_text(size = 20),
+                     axis.text.y  = ggplot2::element_text(size = 20),
+                     legend.position = "none"
+                     )
   })
 
   output$scatter_plot <- shiny::renderPlot({

@@ -216,11 +216,13 @@ mod_roc_server <- function(input, output, session, data) {
       ggplot2::autoplot(rocpr_obj(), curvetype = "ROC")
     ) +
       ggplot2::labs(
-        title = paste("ROC Curve -", input$method),
-        subtitle = paste("Analysis:", input$analysis)
       ) +
       ggplot2::theme_bw(base_size = 16) +
-      ggplot2::theme(aspect.ratio = 1)
+      ggplot2::theme(aspect.ratio = 1,axis.title.x = ggplot2::element_text(size = 25),
+                     axis.title.y = ggplot2::element_text(size = 25),
+                     axis.text.x  = ggplot2::element_text(size = 20),
+                     axis.text.y  = ggplot2::element_text(size = 20),
+                     lengend.position = "none")
 
     if (!is.null(roc_fdr05_point())) {
       pt <- roc_fdr05_point()
@@ -241,9 +243,9 @@ mod_roc_server <- function(input, output, session, data) {
             label = "FDR = 0.01"
           ),
           hjust = -0.1,
-          vjust = -0.5,
+          vjust = 1.3,
           inherit.aes = FALSE,
-          size = 5,
+          size = 7,
           color = "#C9980B"
         )
     }
@@ -258,12 +260,14 @@ mod_roc_server <- function(input, output, session, data) {
     suppressWarnings(
       ggplot2::autoplot(rocpr_obj(), curvetype = "PR")
     ) +
-      ggplot2::labs(
-        title = paste("PR Curve -", input$method),
-        subtitle = paste("Analysis:", input$analysis)
-      ) +
       ggplot2::theme_bw(base_size = 16) +
-      ggplot2::theme(aspect.ratio = 1)
+      ggplot2::theme(aspect.ratio = 1,
+                     axis.title.x = ggplot2::element_text(size = 30),
+                     axis.title.y = ggplot2::element_text(size = 30),
+                     axis.text.x  = ggplot2::element_text(size = 20),
+                     axis.text.y  = ggplot2::element_text(size = 20),
+                     legend.position = "none"
+                     )
   })
 
   # ---- Render plots ----
@@ -311,7 +315,7 @@ mod_roc_server <- function(input, output, session, data) {
   output$download_roc <- shiny::downloadHandler(
     filename = function() {
       paste0(
-        "ROC_", input$analysis, "_", input$method, "_", Sys.Date(), ".png"
+        "ROC_", input$analysis, "_", input$method, ".png"
       )
     },
     content = function(file) {
@@ -319,7 +323,7 @@ mod_roc_server <- function(input, output, session, data) {
       desktop_file <- file.path(
         plots_dir,
         paste0(
-          "ROC_", input$analysis, "_", input$method, "_", Sys.Date(), ".png"
+          "ROC_", input$analysis, "_", input$method, ".png"
         )
       )
 

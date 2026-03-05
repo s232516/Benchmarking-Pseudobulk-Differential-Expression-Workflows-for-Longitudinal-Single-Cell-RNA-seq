@@ -187,19 +187,19 @@ mod_gt_server <- function(input, output, session, data) {
                           color = "#C9980B", size = 2) +
       ggplot2::scale_color_manual(values = c(`TRUE` = "red", `FALSE` = "steelblue")) +
       ggplot2::labs(
-        title = paste0("Ground truth CI coverage — ", input$analysis),
-        subtitle = paste0("Method: ", input$method, " | Formula: ", input$formula,
-                          " | Level: ", as.numeric(input$conf_level) * 100, "%"),
         x = "Log2 fold-change",
-        y = "Genes (labels hidden)"
+        y = "Genes"
       ) +
       ggplot2::theme_bw(base_size = 16) +
       ggplot2::theme(
-        axis.text.x = ggplot2::element_text(angle = 30, hjust = 1),
+
+        axis.title.x = ggplot2::element_text(size = 30),
+        axis.title.y = ggplot2::element_text(size = 30),
+        axis.text.x  = ggplot2::element_text(size = 20),
         axis.text.y = ggplot2::element_blank(),   # <-- hides gene labels
-        axis.ticks.y = ggplot2::element_blank(),  # <-- hides ticks too
-        legend.position = "right",
-        aspect.ratio = 1
+        axis.ticks.y = ggplot2::element_blank(),
+        aspect.ratio = 1,
+        legend.position = "none"
       )
   })
   output$gt_plot <- shiny::renderPlot({
