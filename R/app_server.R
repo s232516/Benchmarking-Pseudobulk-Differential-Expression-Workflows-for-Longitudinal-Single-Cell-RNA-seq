@@ -9,11 +9,15 @@ app_server <- function(input, output, session) {
 
   board <- pins::board_local("nrgn-data")
   simulation <- pins::pin_read(board, "simulations_final")
-  compare <- pins::pin_read(board, "compare_data_final")
+  compare <- pins::pin_read(board, "compare_data_paper")
   # for normalized counts comment this line.
   compare <- compare |>
-    dplyr::filter(.data$norm == TRUE | is.na(.data$norm))
-  ci_data <- pins::pin_read(board, "rescueSim_ci_real")
+    dplyr::filter(
+      .data$norm == TRUE |
+        .data$method %in% c("DESeq2 pseudobulk", "edgeR pseudobulk",
+                            "limma-voom pseudobulk")
+    )
+  ci_data <- pins::pin_read(board, "rescueSim_ci_paper")
   ground_truth <- pins::pin_read(board, "ground_truth_final")
 
   # callModule(mod_overview_server, "overview", sim = sim_pop_cond)
