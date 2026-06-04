@@ -17,12 +17,11 @@ mod_ci_hist_ui <- function(id) {
           shiny::selectInput(
             ns("analysis_group"),
             "Select dataset:",
-            choices = c(
-              "splatPop"        = "splatpop",
-              "rescueSim"       = "rescueSim",
-              "rescueSim (norm)" = "rescueSim_norm"
-            ),
-            selected = "rescueSim"
+            choices =  c(
+    "rescueSim" = "rescueSim",
+    "rescueSim (norm)" = "rescueSim_norm"
+  ),
+  selected = "rescueSim"
           ),
 
           shiny::selectInput(
@@ -99,15 +98,21 @@ mod_ci_hist_server <- function(input, output, session, data) {
 
     d <- data
 
-    if (input$analysis_group == "splatpop") {
-      d <- dplyr::filter(d, grepl("^splatpop", analysis))
-    } else if (input$analysis_group == "rescueSim") {
-      # exclude norm
-      d <- dplyr::filter(d, grepl("^rescueSim", analysis) & !grepl("\\(norm\\)", analysis))
-    } else if (input$analysis_group == "rescueSim_norm") {
-      d <- dplyr::filter(d, grepl("^rescueSim", analysis) & grepl("\\norm\\", analysis))
+    if (input$analysis_group == "rescueSim") {
+      d <- d |>
+        dplyr::filter(
+          grepl("^rescueSim", analysis),
+          !grepl("norm", analysis)
+        )
     }
-    print(d)
+
+    if (input$analysis_group == "rescueSim_norm") {
+      d <- d |>
+        dplyr::filter(
+          grepl("^rescueSim", analysis),
+          grepl("norm", analysis)
+        )
+    }
 
     d
   })
@@ -154,8 +159,6 @@ mod_ci_hist_server <- function(input, output, session, data) {
   # --- Filtered dataset used for plotting ---
   plot_data <- shiny::reactive({
     shiny::req(input$method, input$formula, input$metric)
-    print('hola')
-    print(filtered_data())
 
     filtered_data() |>
       dplyr::filter(

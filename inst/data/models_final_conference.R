@@ -286,7 +286,11 @@ run_edger_from_pseudobulk <- function(
       stat = F,
       pvalue = PValue,
       padj = FDR,
-      lfcSE = NA_real_
+      lfcSE = dplyr::if_else(
+        is.finite(F) & F > 0,
+        abs(logFC / sqrt(F)),
+        NA_real_
+      )
     )
 
   df$time <- proc.time()[["elapsed"]] - t_start
