@@ -340,33 +340,32 @@ mod_ci_hist_server <- function(input, output, session, data) {
     }
 
     # Significant = up + down together.
+    # Significant = up + down together.
+    # This creates both the count columns and the proportion column.
     if (all(c("in_ci_up", "in_ci_down", "total_up", "total_down") %in% names(df))) {
-      total_sig <- df$total_up + df$total_down
-      in_ci_sig <- df$in_ci_up + df$in_ci_down
+      df$total_sig <- as.numeric(df$total_up) + as.numeric(df$total_down)
+      df$in_ci_sig <- as.numeric(df$in_ci_up) + as.numeric(df$in_ci_down)
 
-      df$prop_ci_sig <- divide_safe(in_ci_sig, total_sig)
-    } else if (!"prop_ci_sig" %in% names(df)) {
-      if (all(c("prop_ci_up", "prop_ci_down") %in% names(df))) {
-        df$prop_ci_sig <- rowMeans(
-          df[, c("prop_ci_up", "prop_ci_down")],
-          na.rm = TRUE
-        )
-
-        df$prop_ci_sig[is.nan(df$prop_ci_sig)] <- NA_real_
-      } else {
-        df$prop_ci_sig <- NA_real_
+      df$prop_ci_sig <- divide_safe(df$in_ci_sig, df$total_sig)
+    } else {
+      if (!"total_sig" %in% names(df)) {
+        df$total_sig <- NA_real_
       }
-    }
 
-    # Convert percentages to proportions if needed.
-    for (metric_col in c("prop_ci_total", "prop_ci_sig", "prop_ci_not_sig")) {
-      if (metric_col %in% names(df)) {
-        df[[metric_col]] <- as.numeric(df[[metric_col]])
+      if (!"in_ci_sig" %in% names(df)) {
+        df$in_ci_sig <- NA_real_
+      }
 
-        max_val <- suppressWarnings(max(df[[metric_col]], na.rm = TRUE))
+      if (!"prop_ci_sig" %in% names(df)) {
+        if (all(c("prop_ci_up", "prop_ci_down") %in% names(df))) {
+          df$prop_ci_sig <- rowMeans(
+            df[, c("prop_ci_up", "prop_ci_down")],
+            na.rm = TRUE
+          )
 
-        if (is.finite(max_val) && max_val > 1.5) {
-          df[[metric_col]] <- df[[metric_col]] / 100
+          df$prop_ci_sig[is.nan(df$prop_ci_sig)] <- NA_real_
+        } else {
+          df$prop_ci_sig <- NA_real_
         }
       }
     }
