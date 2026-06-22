@@ -4,7 +4,7 @@ mod_ci_hist_ui <- function(id) {
   bslib::page_fillable(
     bslib::layout_sidebar(
       fillable = TRUE,
-      width = 280,
+      width = 300,
       open = "always",
 
       sidebar = bslib::accordion(
@@ -14,44 +14,79 @@ mod_ci_hist_ui <- function(id) {
           title = "CI coverage settings",
           icon = shiny::icon("sliders"),
 
-          shiny::selectInput(
-            ns("analysis_group"),
-            "Select dataset:",
-            choices =  c(
-    "rescueSim" = "rescueSim",
-    "rescueSim (norm)" = "rescueSim_norm"
-  ),
-  selected = "rescueSim"
-          ),
-
-          shiny::selectInput(
-            ns("method"),
-            "Select DE method:",
-            choices = NULL
-          ),
-
-          shiny::selectInput(
-            ns("formula"),
-            "Select model formula:",
-            choices = NULL
-          ),
-
-          shiny::selectInput(
-            ns("metric"),
-            "Coverage metric:",
+          shiny::radioButtons(
+            inputId = ns("sim_group"),
+            label = "Simulation group:",
             choices = c(
-              "All genes"        = "prop_ci_total",
-              "Upregulated"      = "prop_ci_up",
-              "Downregulated"    = "prop_ci_down",
-              "Not significant"  = "prop_ci_not_sig"
+              "All simulations" = "all",
+              "Original simulations" = "old",
+              "New simulations" = "new"
+            ),
+            selected = "new"
+          ),
+
+          shiny::conditionalPanel(
+            condition = "input.sim_group == 'new'",
+            ns = ns,
+
+            shiny::selectInput(
+              inputId = ns("scenario_filter"),
+              label = "Scenario:",
+              choices = c("All" = "all"),
+              selected = "all"
+            ),
+
+            shiny::selectInput(
+              inputId = ns("n_subj_filter"),
+              label = "Subjects per group:",
+              choices = c("All" = "all"),
+              selected = "all"
+            ),
+
+            shiny::selectInput(
+              inputId = ns("seed_filter"),
+              label = "Seed:",
+              choices = c("All" = "all"),
+              selected = "all"
+            )
+          ),
+
+          shiny::selectInput(
+            inputId = ns("method"),
+            label = "DE method:",
+            choices = NULL
+          ),
+
+          shiny::selectInput(
+            inputId = ns("formula"),
+            label = "Model formula:",
+            choices = NULL
+          ),
+
+          shiny::selectInput(
+            inputId = ns("norm"),
+            label = "Normalization:",
+            choices = c("All" = "all"),
+            selected = "all"
+          ),
+
+          shiny::selectInput(
+            inputId = ns("metric"),
+            label = "Coverage metric:",
+            choices = c(
+              "All genes" = "prop_ci_total",
+              "Significant genes" = "prop_ci_sig",
+              "Not significant genes" = "prop_ci_not_sig"
             ),
             selected = "prop_ci_total"
           ),
 
           shiny::sliderInput(
-            ns("bins"),
-            "Histogram bins:",
-            min = 5, max = 80, value = 40
+            inputId = ns("bins"),
+            label = "Histogram bins:",
+            min = 5,
+            max = 80,
+            value = 30
           )
         )
       ),
@@ -59,18 +94,19 @@ mod_ci_hist_ui <- function(id) {
       bslib::layout_columns(
         col_widths = 12,
 
-        bslib::nav_panel(
-          title = "CI Coverage Histogram",
-          icon = shiny::icon("chart-bar"),
+        div(
+          style = "overflow-y: auto; padding-right: 10px; padding-left: 10px;",
 
           bslib::card(
+            style = "margin-bottom: 1rem;",
+
             bslib::card_header(
               div(
                 style = "display:flex; justify-content:space-between; align-items:center;",
                 shiny::textOutput(ns("ci_hist_header"), inline = TRUE),
                 shiny::downloadButton(
                   outputId = ns("download_ci_hist"),
-                  label = "Download",
+                  label = "",
                   class = "clickable-button-light"
                 )
               )
@@ -78,10 +114,17 @@ mod_ci_hist_ui <- function(id) {
 
             bslib::card_body(
               shiny::plotOutput(
-                ns("ci_hist_plot"),
+                outputId = ns("ci_hist_plot"),
                 height = "550px",
-                width = "800px"
+                width = "100%"
               )
+            )
+          ),
+
+          bslib::card(
+            bslib::card_header("Coverage values"),
+            bslib::card_body(
+              DT::DTOutput(ns("ci_table"))
             )
           )
         )
@@ -90,171 +133,734 @@ mod_ci_hist_ui <- function(id) {
   )
 }
 
+
 mod_ci_hist_server <- function(input, output, session, data) {
 
-  # --- Map selection -> filter rule ---
-  filtered_data <- shiny::reactive({
-    shiny::req(input$analysis_group)
+  safe_filename <- function(x) {
+    x <- gsub("[^A-Za-z0-9_\\-]+", "_", x)
+    gsub("_+", "_", x)
+  }
 
-    d <- data
-
-    if (input$analysis_group == "rescueSim") {
-      d <- d |>
-        dplyr::filter(
-          grepl("^rescueSim", analysis),
-          !grepl("norm", analysis)
-        )
-    }
-
-    if (input$analysis_group == "rescueSim_norm") {
-      d <- d |>
-        dplyr::filter(
-          grepl("^rescueSim", analysis),
-          grepl("norm", analysis)
-        )
-    }
-
-    d
-  })
-
-  # --- Header text (dynamic) ---
-  output$ci_hist_header <- shiny::renderText({
-    shiny::req(input$analysis_group)
-    switch(
-      input$analysis_group,
-      "splatpop" = "splatPop CI coverage",
-      "rescueSim" = "rescueSim CI coverage",
-      "rescueSim_norm" = "rescueSim (norm) CI coverage"
+  divide_safe <- function(num, den) {
+    dplyr::if_else(
+      !is.na(den) & den > 0,
+      as.numeric(num) / as.numeric(den),
+      NA_real_
     )
+  }
+
+  scenario_order <- c(
+    "global_null",
+    "time_only_null",
+    "weak",
+    "medium",
+    "strong"
+  )
+
+  base_data <- shiny::reactive({
+    df <- as.data.frame(data)
+    n <- nrow(df)
+
+    # -------------------------------------------------------------------------
+    # Standardise identifiers
+    # -------------------------------------------------------------------------
+
+    if (!"analysis" %in% names(df)) {
+      if ("analysis_join" %in% names(df)) {
+        df$analysis <- df$analysis_join
+      } else if ("sim" %in% names(df)) {
+        df$analysis <- df$sim
+      } else {
+        df$analysis <- NA_character_
+      }
+    }
+
+    if (!"analysis_join" %in% names(df)) {
+      df$analysis_join <- df$analysis
+    }
+
+    if (!"sim" %in% names(df)) {
+      df$sim <- df$analysis
+    }
+
+    if (!"norm" %in% names(df)) {
+      df$norm <- NA
+    }
+
+    df <- df |>
+      dplyr::mutate(
+        analysis = as.character(analysis),
+        analysis_join = as.character(analysis_join),
+        sim = as.character(sim),
+        simulation_id = dplyr::coalesce(
+          as.character(analysis_join),
+          as.character(analysis),
+          as.character(sim)
+        )
+      )
+
+    # -------------------------------------------------------------------------
+    # Standardise scenario / n / seed
+    # -------------------------------------------------------------------------
+
+    if (!"scenario" %in% names(df)) {
+      scenario_x <- if ("scenario.x" %in% names(df)) {
+        as.character(df$scenario.x)
+      } else {
+        rep(NA_character_, n)
+      }
+
+      scenario_y <- if ("scenario.y" %in% names(df)) {
+        as.character(df$scenario.y)
+      } else {
+        rep(NA_character_, n)
+      }
+
+      df$scenario <- dplyr::coalesce(scenario_x, scenario_y)
+    }
+
+    if (!"nSubjsPerGroup" %in% names(df)) {
+      n_x <- if ("nSubjsPerGroup.x" %in% names(df)) {
+        as.numeric(df$nSubjsPerGroup.x)
+      } else {
+        rep(NA_real_, n)
+      }
+
+      n_y <- if ("nSubjsPerGroup.y" %in% names(df)) {
+        as.numeric(df$nSubjsPerGroup.y)
+      } else {
+        rep(NA_real_, n)
+      }
+
+      df$nSubjsPerGroup <- dplyr::coalesce(n_x, n_y)
+    }
+
+    if (!"seed" %in% names(df)) {
+      seed_x <- if ("seed.x" %in% names(df)) {
+        as.numeric(df$seed.x)
+      } else {
+        rep(NA_real_, n)
+      }
+
+      seed_y <- if ("seed.y" %in% names(df)) {
+        as.numeric(df$seed.y)
+      } else {
+        rep(NA_real_, n)
+      }
+
+      df$seed <- dplyr::coalesce(seed_x, seed_y)
+    }
+
+    # Parse fair names if scenario/n/seed are missing.
+    fair_name <- dplyr::coalesce(
+      as.character(df$analysis_join),
+      as.character(df$analysis),
+      as.character(df$sim)
+    )
+
+    parsed <- regexec(
+      "^fair_(.+)_n([0-9]+)_seed([0-9]+).*",
+      fair_name
+    )
+
+    parsed <- regmatches(fair_name, parsed)
+
+    parsed_scenario <- rep(NA_character_, n)
+    parsed_n <- rep(NA_real_, n)
+    parsed_seed <- rep(NA_real_, n)
+
+    for (i in seq_along(parsed)) {
+      if (length(parsed[[i]]) == 4) {
+        parsed_scenario[i] <- parsed[[i]][2]
+        parsed_n[i] <- as.numeric(parsed[[i]][3])
+        parsed_seed[i] <- as.numeric(parsed[[i]][4])
+      }
+    }
+
+    df$scenario <- dplyr::coalesce(
+      as.character(df$scenario),
+      parsed_scenario
+    )
+
+    df$nSubjsPerGroup <- dplyr::coalesce(
+      as.numeric(df$nSubjsPerGroup),
+      parsed_n
+    )
+
+    df$seed <- dplyr::coalesce(
+      as.numeric(df$seed),
+      parsed_seed
+    )
+
+    # New simulations are the fair/scenario simulations.
+    # Old simulations are the original rescueSim-style ones.
+    df <- df |>
+      dplyr::mutate(
+        .is_new = !is.na(scenario) | grepl("^fair_", simulation_id),
+        .is_old = !.is_new
+      )
+
+    # -------------------------------------------------------------------------
+    # Build coverage metrics
+    # -------------------------------------------------------------------------
+
+    if (!"prop_ci_total" %in% names(df)) {
+      if (all(c("in_ci_total", "total_genes") %in% names(df))) {
+        df$prop_ci_total <- divide_safe(df$in_ci_total, df$total_genes)
+      } else {
+        df$prop_ci_total <- NA_real_
+      }
+    }
+
+    if (!"prop_ci_up" %in% names(df)) {
+      if (all(c("in_ci_up", "total_up") %in% names(df))) {
+        df$prop_ci_up <- divide_safe(df$in_ci_up, df$total_up)
+      } else {
+        df$prop_ci_up <- NA_real_
+      }
+    }
+
+    if (!"prop_ci_down" %in% names(df)) {
+      if (all(c("in_ci_down", "total_down") %in% names(df))) {
+        df$prop_ci_down <- divide_safe(df$in_ci_down, df$total_down)
+      } else {
+        df$prop_ci_down <- NA_real_
+      }
+    }
+
+    if (!"prop_ci_not_sig" %in% names(df)) {
+      if (all(c("in_ci_not_sig", "total_not_sig") %in% names(df))) {
+        df$prop_ci_not_sig <- divide_safe(
+          df$in_ci_not_sig,
+          df$total_not_sig
+        )
+      } else {
+        df$prop_ci_not_sig <- NA_real_
+      }
+    }
+
+    # Significant = up + down together.
+    if (all(c("in_ci_up", "in_ci_down", "total_up", "total_down") %in% names(df))) {
+      total_sig <- df$total_up + df$total_down
+      in_ci_sig <- df$in_ci_up + df$in_ci_down
+
+      df$prop_ci_sig <- divide_safe(in_ci_sig, total_sig)
+    } else if (!"prop_ci_sig" %in% names(df)) {
+      if (all(c("prop_ci_up", "prop_ci_down") %in% names(df))) {
+        df$prop_ci_sig <- rowMeans(
+          df[, c("prop_ci_up", "prop_ci_down")],
+          na.rm = TRUE
+        )
+
+        df$prop_ci_sig[is.nan(df$prop_ci_sig)] <- NA_real_
+      } else {
+        df$prop_ci_sig <- NA_real_
+      }
+    }
+
+    # Convert percentages to proportions if needed.
+    for (metric_col in c("prop_ci_total", "prop_ci_sig", "prop_ci_not_sig")) {
+      if (metric_col %in% names(df)) {
+        df[[metric_col]] <- as.numeric(df[[metric_col]])
+
+        max_val <- suppressWarnings(max(df[[metric_col]], na.rm = TRUE))
+
+        if (is.finite(max_val) && max_val > 1.5) {
+          df[[metric_col]] <- df[[metric_col]] / 100
+        }
+      }
+    }
+
+    df
   })
 
-  # --- Populate method selector ---
+  # ---------------------------------------------------------------------------
+  # Update scenario / n / seed filters for new simulations
+  # ---------------------------------------------------------------------------
+
   shiny::observe({
-    df <- filtered_data()
-    shiny::req(nrow(df) > 0)
+    df <- base_data() |>
+      dplyr::filter(.is_new)
+
+    scenarios <- df |>
+      dplyr::filter(!is.na(scenario)) |>
+      dplyr::pull(scenario) |>
+      unique()
+
+    scenarios <- c(
+      intersect(scenario_order, scenarios),
+      setdiff(sort(scenarios), scenario_order)
+    )
+
+    current_scenario <- input$scenario_filter
+
+    selected_scenario <- if (
+      !is.null(current_scenario) &&
+      current_scenario %in% c("all", scenarios)
+    ) {
+      current_scenario
+    } else if ("weak" %in% scenarios) {
+      "weak"
+    } else {
+      "all"
+    }
 
     shiny::updateSelectInput(
       session,
-      "method",
-      choices = unique(df$method),
-      selected = unique(df$method)[1]
+      "scenario_filter",
+      choices = c("All" = "all", scenarios),
+      selected = selected_scenario
     )
-  })
 
-  # --- Populate formula selector ---
-  shiny::observeEvent(input$method, {
-    shiny::req(input$method)
+    df_n <- df
 
-    df <- filtered_data() |>
-      dplyr::filter(method == input$method)
+    if (!is.null(selected_scenario) && selected_scenario != "all") {
+      df_n <- df_n |>
+        dplyr::filter(scenario == selected_scenario)
+    }
+
+    n_subj <- df_n |>
+      dplyr::filter(!is.na(nSubjsPerGroup)) |>
+      dplyr::pull(nSubjsPerGroup) |>
+      unique() |>
+      sort()
+
+    current_n <- input$n_subj_filter
+
+    selected_n <- if (
+      !is.null(current_n) &&
+      current_n %in% c("all", as.character(n_subj))
+    ) {
+      current_n
+    } else {
+      "all"
+    }
 
     shiny::updateSelectInput(
       session,
-      "formula",
-      choices = unique(df$formula),
-      selected = unique(df$formula)[1]
+      "n_subj_filter",
+      choices = c("All" = "all", as.character(n_subj)),
+      selected = selected_n
+    )
+
+    df_seed <- df_n
+
+    if (!is.null(selected_n) && selected_n != "all") {
+      df_seed <- df_seed |>
+        dplyr::filter(nSubjsPerGroup == as.numeric(selected_n))
+    }
+
+    seeds <- df_seed |>
+      dplyr::filter(!is.na(seed)) |>
+      dplyr::pull(seed) |>
+      unique() |>
+      sort()
+
+    current_seed <- input$seed_filter
+
+    selected_seed <- if (
+      !is.null(current_seed) &&
+      current_seed %in% c("all", as.character(seeds))
+    ) {
+      current_seed
+    } else {
+      "all"
+    }
+
+    shiny::updateSelectInput(
+      session,
+      "seed_filter",
+      choices = c("All" = "all", as.character(seeds)),
+      selected = selected_seed
     )
   })
 
-  # --- Filtered dataset used for plotting ---
+  # ---------------------------------------------------------------------------
+  # Filter data by simulation group and new-simulation filters
+  # ---------------------------------------------------------------------------
+
+  group_data <- shiny::reactive({
+    shiny::req(input$sim_group)
+
+    df <- base_data()
+
+    if (input$sim_group == "old") {
+      df <- df |>
+        dplyr::filter(.is_old)
+    }
+
+    if (input$sim_group == "new") {
+      df <- df |>
+        dplyr::filter(.is_new)
+
+      if (!is.null(input$scenario_filter) && input$scenario_filter != "all") {
+        df <- df |>
+          dplyr::filter(scenario == input$scenario_filter)
+      }
+
+      if (!is.null(input$n_subj_filter) && input$n_subj_filter != "all") {
+        df <- df |>
+          dplyr::filter(nSubjsPerGroup == as.numeric(input$n_subj_filter))
+      }
+
+      if (!is.null(input$seed_filter) && input$seed_filter != "all") {
+        df <- df |>
+          dplyr::filter(seed == as.numeric(input$seed_filter))
+      }
+    }
+
+    df
+  })
+
+  output$ci_hist_header <- shiny::renderText({
+    if (is.null(input$sim_group)) {
+      return("CI coverage")
+    }
+
+    if (input$sim_group == "new") {
+      return(
+        paste0(
+          "New simulations CI coverage",
+          " | scenario: ", input$scenario_filter,
+          " | n: ", input$n_subj_filter,
+          " | seed: ", input$seed_filter
+        )
+      )
+    }
+
+    switch(
+      input$sim_group,
+      "old" = "Original simulations CI coverage",
+      "all" = "All simulations CI coverage",
+      "CI coverage"
+    )
+  })
+
+  # ---------------------------------------------------------------------------
+  # Update method selector
+  # ---------------------------------------------------------------------------
+
+  shiny::observeEvent(
+    {
+      input$sim_group
+      input$scenario_filter
+      input$n_subj_filter
+      input$seed_filter
+    },
+    {
+      df <- group_data()
+
+      methods <- df |>
+        dplyr::filter(!is.na(method)) |>
+        dplyr::pull(method) |>
+        unique() |>
+        sort()
+
+      shiny::updateSelectInput(
+        session,
+        "method",
+        choices = methods,
+        selected = if (length(methods) > 0) methods[1] else NULL
+      )
+    },
+    ignoreInit = FALSE
+  )
+
+  # ---------------------------------------------------------------------------
+  # Update formula and norm selectors
+  # ---------------------------------------------------------------------------
+
+  shiny::observeEvent(
+    {
+      input$method
+      input$sim_group
+      input$scenario_filter
+      input$n_subj_filter
+      input$seed_filter
+    },
+    {
+      shiny::req(input$method)
+
+      df <- group_data() |>
+        dplyr::filter(method == input$method)
+
+      formulas <- df |>
+        dplyr::filter(!is.na(formula)) |>
+        dplyr::pull(formula) |>
+        unique() |>
+        sort()
+
+      shiny::updateSelectInput(
+        session,
+        "formula",
+        choices = formulas,
+        selected = if (length(formulas) > 0) formulas[1] else NULL
+      )
+
+      if ("norm" %in% names(df) && any(!is.na(df$norm))) {
+        avail <- sort(unique(as.character(df$norm[!is.na(df$norm)])))
+
+        choices <- c("All" = "all")
+
+        if ("TRUE" %in% avail) {
+          choices <- c(choices, "Normalized" = "TRUE")
+        }
+
+        if ("FALSE" %in% avail) {
+          choices <- c(choices, "Not normalized" = "FALSE")
+        }
+
+        shiny::updateSelectInput(
+          session,
+          "norm",
+          choices = choices,
+          selected = "all"
+        )
+      } else {
+        shiny::updateSelectInput(
+          session,
+          "norm",
+          choices = c("All" = "all"),
+          selected = "all"
+        )
+      }
+    },
+    ignoreInit = FALSE
+  )
+
+  # ---------------------------------------------------------------------------
+  # Plot/table data
+  # ---------------------------------------------------------------------------
+
   plot_data <- shiny::reactive({
     shiny::req(input$method, input$formula, input$metric)
 
-    filtered_data() |>
+    df <- group_data() |>
       dplyr::filter(
         method == input$method,
         formula == input$formula
+      )
+
+    if (!is.null(input$norm) && input$norm != "all" && "norm" %in% names(df)) {
+      df <- df |>
+        dplyr::filter(as.character(norm) == input$norm)
+    }
+
+    shiny::validate(
+      shiny::need(
+        input$metric %in% names(df),
+        paste("Metric not found:", input$metric)
+      )
+    )
+
+    out <- df |>
+      dplyr::mutate(
+        value = .data[[input$metric]]
       ) |>
+      dplyr::filter(!is.na(value)) |>
       dplyr::select(
+        simulation_id,
         analysis,
-        value = !!rlang::sym(input$metric)
-      ) |>
-      dplyr::filter(!is.na(value))
+        analysis_join,
+        scenario,
+        nSubjsPerGroup,
+        seed,
+        method,
+        formula,
+        norm,
+        dplyr::any_of(c(
+          "conf_level",
+          "total_genes",
+          "in_ci_total",
+          "total_up",
+          "in_ci_up",
+          "total_down",
+          "in_ci_down",
+          "total_sig",
+          "in_ci_sig",
+          "total_not_sig",
+          "in_ci_not_sig"
+        )),
+        prop_ci_total,
+        prop_ci_sig,
+        prop_ci_not_sig,
+        value
+      )
+
+    shiny::validate(
+      shiny::need(
+        nrow(out) > 0,
+        paste0(
+          "No CI coverage values found for metric '",
+          input$metric,
+          "'. Check that ci_data contains this metric and the selected filters are not empty."
+        )
+      )
+    )
+
+    out
   })
 
-  # --- Plot object ---
+  # ---------------------------------------------------------------------------
+  # Plot
+  # ---------------------------------------------------------------------------
+
   ci_hist_plot_obj <- shiny::reactive({
     df <- plot_data()
-    shiny::validate(shiny::need(nrow(df) > 0, "No data available for this selection."))
 
-    x_vals <- sort(unique(df$value))
-
-    n_label <- switch(
-      input$analysis_group,
-      "splatpop" = "Number of splatPop datasets",
-      "rescueSim" = "Number of rescueSim datasets",
-      "rescueSim_norm" = "Number of rescueSim (norm) datasets"
+    metric_label <- switch(
+      input$metric,
+      "prop_ci_total" = "All genes",
+      "prop_ci_sig" = "Significant genes",
+      "prop_ci_not_sig" = "Not significant genes",
+      input$metric
     )
 
-    title_prefix <- switch(
-      input$analysis_group,
-      "splatpop" = "CI coverage distribution – splatPop",
-      "rescueSim" = "CI coverage distribution – rescueSim",
-      "rescueSim_norm" = "CI coverage distribution – rescueSim (norm)"
+    subtitle_text <- paste0(
+      "Method: ", input$method,
+      " | Formula: ", input$formula
     )
 
-    ggplot2::ggplot(df, ggplot2::aes(x = value)) +
+    if (input$sim_group == "new") {
+      subtitle_text <- paste0(
+        subtitle_text,
+        " | scenario: ", input$scenario_filter,
+        " | n: ", input$n_subj_filter,
+        " | seed: ", input$seed_filter
+      )
+    }
+
+    conf_line <- if ("conf_level" %in% names(df)) {
+      suppressWarnings(unique(df$conf_level))
+    } else {
+      numeric(0)
+    }
+
+    conf_line <- conf_line[is.finite(conf_line)]
+
+    p <- ggplot2::ggplot(df, ggplot2::aes(x = value)) +
       ggplot2::geom_histogram(
         bins = input$bins,
         fill = "grey80",
         color = "grey30"
       ) +
       ggplot2::scale_x_continuous(
-        breaks = x_vals,
-        labels = round(x_vals, 3)
+        breaks = scales::breaks_extended(6),
+        labels = scales::percent_format(accuracy = 1)
       ) +
       ggplot2::labs(
         x = "CI coverage proportion",
-        y = n_label,
-        title = paste(title_prefix, "(", input$metric, ")")
+        y = "Number of simulation datasets",
+        title = paste("CI coverage distribution -", metric_label),
+        subtitle = subtitle_text
       ) +
       ggplot2::theme_bw(base_size = 16) +
       ggplot2::theme(
         aspect.ratio = 1,
         text = ggplot2::element_text(size = 18),
-        axis.text.x = ggplot2::element_text(angle = 45, hjust = 1)
+        axis.title.x = ggplot2::element_text(size = 20),
+        axis.title.y = ggplot2::element_text(size = 20),
+        axis.text.x = ggplot2::element_text(size = 14),
+        axis.text.y = ggplot2::element_text(size = 14)
       )
+
+    if (length(conf_line) == 1) {
+      p <- p +
+        ggplot2::geom_vline(
+          xintercept = conf_line,
+          linetype = "dashed",
+          color = "grey40"
+        )
+    }
+
+    p
   })
 
-  # --- Render ---
   output$ci_hist_plot <- shiny::renderPlot({
     ci_hist_plot_obj()
   })
 
-  # --- Desktop/plots directory ---
-  plots_dir <- file.path(path.expand("~"), "Desktop", "plots")
-  if (!dir.exists(plots_dir)) dir.create(plots_dir, recursive = TRUE)
+  output$ci_table <- DT::renderDT({
+    table_df <- plot_data() |>
+      dplyr::mutate(
+        prop_ci_total = round(prop_ci_total, 4),
+        prop_ci_sig = round(prop_ci_sig, 4),
+        prop_ci_not_sig = round(prop_ci_not_sig, 4),
+        value = round(value, 4)
+      ) |>
+      dplyr::arrange(
+        scenario,
+        nSubjsPerGroup,
+        seed,
+        simulation_id
+      )
 
-  # --- Download ---
+    DT::datatable(
+      table_df,
+      options = list(
+        pageLength = 15,
+        scrollX = TRUE
+      )
+    )
+  })
+
+  # ---------------------------------------------------------------------------
+  # Download
+  # ---------------------------------------------------------------------------
+
+  plots_dir <- file.path(path.expand("~"), "Desktop", "plots")
+
+  if (!dir.exists(plots_dir)) {
+    dir.create(plots_dir, recursive = TRUE)
+  }
+
   output$download_ci_hist <- shiny::downloadHandler(
     filename = function() {
       paste0(
         "ci_hist_",
-        input$analysis_group, "_",
-        input$method, "_",
-        gsub("[^A-Za-z0-9_]+", "_", input$formula), "_",
+        input$sim_group, "_",
+        safe_filename(input$scenario_filter), "_",
+        safe_filename(input$n_subj_filter), "_",
+        safe_filename(input$seed_filter), "_",
+        safe_filename(input$method), "_",
+        safe_filename(input$formula), "_",
         input$metric, "_",
         Sys.Date(),
         ".png"
       )
     },
     content = function(file) {
-
       desktop_file <- file.path(
         plots_dir,
         paste0(
           "ci_hist_",
-          input$analysis_group, "_",
-          input$method, "_",
-          gsub("[^A-Za-z0-9_]+", "_", input$formula), "_",
+          input$sim_group, "_",
+          safe_filename(input$scenario_filter), "_",
+          safe_filename(input$n_subj_filter), "_",
+          safe_filename(input$seed_filter), "_",
+          safe_filename(input$method), "_",
+          safe_filename(input$formula), "_",
           input$metric, "_",
           Sys.Date(),
           ".png"
         )
       )
 
-      ggplot2::ggsave(desktop_file, ci_hist_plot_obj(), width = 8, height = 6, dpi = 300)
-      ggplot2::ggsave(file,         ci_hist_plot_obj(), width = 8, height = 6, dpi = 300)
+      ggplot2::ggsave(
+        filename = desktop_file,
+        plot = ci_hist_plot_obj(),
+        width = 8,
+        height = 7,
+        dpi = 300
+      )
+
+      ggplot2::ggsave(
+        filename = file,
+        plot = ci_hist_plot_obj(),
+        width = 8,
+        height = 7,
+        dpi = 300
+      )
     }
   )
 }

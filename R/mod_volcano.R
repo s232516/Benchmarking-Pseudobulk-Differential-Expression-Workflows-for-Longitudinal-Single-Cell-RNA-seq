@@ -14,19 +14,59 @@ mod_volcano_ui <- function(id) {
           title = "Analysis",
           icon = shiny::icon("bars"),
 
-          shiny::selectInput(
-            inputId = ns("data"),
-            label = bslib::tooltip(
-              trigger = shiny::tagList("Select dataset", shiny::icon("circle-info")),
-              "Select which dataset to analyse."
+          shiny::radioButtons(
+            inputId = ns("sim_source"),
+            label = "Simulation set:",
+            choices = c(
+              "Fair benchmark" = "fair",
+              "Original simulations" = "old"
             ),
-            choices = NULL
+            selected = "fair"
+          ),
+
+          shiny::conditionalPanel(
+            condition = "input.sim_source == 'old'",
+            ns = ns,
+
+            shiny::selectInput(
+              inputId = ns("data"),
+              label = bslib::tooltip(
+                trigger = shiny::tagList("Select dataset",
+                                         shiny::icon("circle-info")),
+                "Select which original simulation dataset to analyse."
+              ),
+              choices = NULL
+            )
+          ),
+
+          shiny::conditionalPanel(
+            condition = "input.sim_source == 'fair'",
+            ns = ns,
+
+            shiny::selectInput(
+              inputId = ns("scenario"),
+              label = "Scenario:",
+              choices = NULL
+            ),
+
+            shiny::selectInput(
+              inputId = ns("n_subj"),
+              label = "Subjects per group:",
+              choices = NULL
+            ),
+
+            shiny::selectInput(
+              inputId = ns("seed"),
+              label = "Seed:",
+              choices = NULL
+            )
           ),
 
           shiny::selectInput(
             inputId = ns("de_method"),
             label = bslib::tooltip(
-              trigger = shiny::tagList("Select DE method", shiny::icon("circle-info")),
+              trigger = shiny::tagList("Select DE method",
+                                       shiny::icon("circle-info")),
               "Select the differential expression method."
             ),
             choices = NULL
@@ -35,7 +75,8 @@ mod_volcano_ui <- function(id) {
           shiny::selectInput(
             inputId = ns("formula"),
             label = bslib::tooltip(
-              trigger = shiny::tagList("Select formula", shiny::icon("circle-info")),
+              trigger = shiny::tagList("Select formula",
+                                       shiny::icon("circle-info")),
               "Select the model formula."
             ),
             choices = NULL
@@ -121,90 +162,279 @@ mod_volcano_ui <- function(id) {
 
 mod_volcano_server <- function(input, output, session, data) {
 
-  # ---- Update dataset selector ----
+   # Choose dataset column
+
+  dataset_col <- if ("analysis_join" %in% colnames(data)) {
+    "analysis_join"
+  } else {
+    "analysis"
+  }
+  # Base cleaned data
+
+  base_data <- shiny::reactive({
+    df <- as.data.frame(data)
+
+    n <- nrow(df)
+
+    # Fix scenario.x / scenario.y problem
+    if (!"scenario" %in% names(df)) {
+      scenario_x <- if ("scenario.x" %in% names(df)) as.character(df$scenario.x)
+      else rep(NA_character_, n)
+      scenario_y <- if ("scenario.y" %in% names(df)) as.character(df$scenario.y)
+      else rep(NA_character_, n)
+
+      df$scenario <- dplyr::coalesce(scenario_x, scenario_y)
+    }
+
+    # Fix nSubjsPerGroup.x / nSubjsPerGroup.y problem
+    if (!"nSubjsPerGroup" %in% names(df)) {
+      n_x <- if ("nSubjsPerGroup.x" %in% names(df))
+        as.numeric(df$nSubjsPerGroup.x) else rep(NA_real_, n)
+      n_y <- if ("nSubjsPerGroup.y" %in% names(df))
+        as.numeric(df$nSubjsPerGroup.y) else rep(NA_real_, n)
+
+      df$nSubjsPerGroup <- dplyr::coalesce(n_x, n_y)
+    }
+
+    # Fix seed.x / seed.y problem
+    if (!"seed" %in% names(df)) {
+      seed_x <- if ("seed.x" %in% names(df)) as.numeric(df$seed.x)
+      else rep(NA_real_, n)
+      seed_y <- if ("seed.y" %in% names(df)) as.numeric(df$seed.y)
+      else rep(NA_real_, n)
+
+      df$seed <- dplyr::coalesce(seed_x, seed_y)
+    }
+
+    if ("trueDE" %in% names(df)) {
+      df$trueDE <- as.logical(df$trueDE)
+    }
+
+    df
+  })
+
+
+  # Update simulation selectors
+
   observe({
+    df <- base_data()
+
+    old_datasets <- df |>
+      dplyr::filter(!grepl("^fair_", .data[[dataset_col]])) |>
+      dplyr::pull(.data[[dataset_col]]) |>
+      unique() |>
+      sort()
+
+    fair_df <- df |>
+      dplyr::filter(grepl("^fair_", .data[[dataset_col]]))
+
+    scenarios <- fair_df |>
+      dplyr::filter(!is.na(scenario)) |>
+      dplyr::pull(scenario) |>
+      unique() |>
+      sort()
+
+    n_subj <- fair_df |>
+      dplyr::filter(!is.na(nSubjsPerGroup)) |>
+      dplyr::pull(nSubjsPerGroup) |>
+      unique() |>
+      sort()
+
+    seeds <- fair_df |>
+      dplyr::filter(!is.na(seed)) |>
+      dplyr::pull(seed) |>
+      unique() |>
+      sort()
+
     shiny::updateSelectInput(
       session,
       "data",
-      choices = unique(data$analysis),
-      selected = unique(data$analysis)[1]
+      choices = old_datasets,
+      selected = if (length(old_datasets) > 0) old_datasets[1] else NULL
     )
-  })
-
-  observeEvent(input$data, {
-    df <- data |>
-      dplyr::filter(analysis == input$data)
 
     shiny::updateSelectInput(
       session,
-      "de_method",
-      choices = unique(df$method),
-      selected = unique(df$method)[1]
+      "scenario",
+      choices = scenarios,
+      selected = if (length(scenarios) > 0) scenarios[1] else NULL
     )
-  })
-
-  observeEvent(c(input$data, input$de_method), {
-    df <- data |>
-      dplyr::filter(
-        analysis == input$data,
-        method == input$de_method
-      )
 
     shiny::updateSelectInput(
       session,
-      "formula",
-      choices = unique(df$formula),
-      selected = unique(df$formula)[1]
+      "n_subj",
+      choices = as.character(n_subj),
+      selected = if (length(n_subj) > 0) as.character(n_subj[1]) else NULL
     )
 
-    # ---- NEW: update norm choices depending on availability ----
-    if ("norm" %in% names(df) && any(!is.na(df$norm))) {
-      avail <- sort(unique(df$norm[!is.na(df$norm)]))  # logical TRUE/FALSE
-      choices <- c("All" = "all")
-      if (TRUE %in% avail)  choices <- c(choices, "Normalized" = "TRUE")
-      if (FALSE %in% avail) choices <- c(choices, "Not normalized" = "FALSE")
+    shiny::updateSelectInput(
+      session,
+      "seed",
+      choices = as.character(seeds),
+      selected = if (length(seeds) > 0) as.character(seeds[1]) else NULL
+    )
+  })
 
-      shiny::updateSelectInput(
-        session,
-        "norm",
-        choices = choices,
-        selected = "all"
-      )
+  # ---------------------------------------------------------------------------
+  # Selected simulation data
+  # ---------------------------------------------------------------------------
+
+  selected_simulation_data <- shiny::reactive({
+    df <- base_data()
+
+    if (is.null(input$sim_source) || input$sim_source == "fair") {
+      req(input$scenario, input$n_subj, input$seed)
+
+      df |>
+        dplyr::filter(
+          grepl("^fair_", .data[[dataset_col]]),
+          scenario == input$scenario,
+          nSubjsPerGroup == as.numeric(input$n_subj),
+          seed == as.numeric(input$seed)
+        )
     } else {
-      # if this method has no norm column (e.g. DESeq2), keep only "All"
-      shiny::updateSelectInput(
-        session,
-        "norm",
-        choices = c("All" = "all"),
-        selected = "all"
-      )
+      req(input$data)
+
+      df |>
+        dplyr::filter(.data[[dataset_col]] == input$data)
     }
   })
 
-  # ---- Update logFC slider dynamically ----
+  selected_simulation_label <- shiny::reactive({
+    df <- selected_simulation_data()
+
+    if (nrow(df) == 0) {
+      return("No simulation selected")
+    }
+
+    unique(df[[dataset_col]])[1]
+  })
+
+  # ---------------------------------------------------------------------------
+  # Update method selector
+  # ---------------------------------------------------------------------------
+
+  observeEvent(
+    {
+      input$sim_source
+      input$data
+      input$scenario
+      input$n_subj
+      input$seed
+    },
+    {
+      df <- selected_simulation_data()
+
+      methods <- df |>
+        dplyr::filter(!is.na(method)) |>
+        dplyr::pull(method) |>
+        unique() |>
+        sort()
+
+      shiny::updateSelectInput(
+        session,
+        "de_method",
+        choices = methods,
+        selected = if (length(methods) > 0) methods[1] else NULL
+      )
+    },
+    ignoreInit = FALSE
+  )
+
+  # ---------------------------------------------------------------------------
+  # Update formula and normalization selectors
+  # ---------------------------------------------------------------------------
+
+  observeEvent(
+    {
+      input$de_method
+    },
+    {
+      req(input$de_method)
+
+      df <- selected_simulation_data() |>
+        dplyr::filter(method == input$de_method)
+
+      formulas <- df |>
+        dplyr::filter(!is.na(formula)) |>
+        dplyr::pull(formula) |>
+        unique() |>
+        sort()
+
+      shiny::updateSelectInput(
+        session,
+        "formula",
+        choices = formulas,
+        selected = if (length(formulas) > 0) formulas[1] else NULL
+      )
+
+      if ("norm" %in% names(df) && any(!is.na(df$norm))) {
+        avail <- sort(unique(df$norm[!is.na(df$norm)]))
+
+        choices <- c("All" = "all")
+
+        if (TRUE %in% avail) {
+          choices <- c(choices, "Normalized" = "TRUE")
+        }
+
+        if (FALSE %in% avail) {
+          choices <- c(choices, "Not normalized" = "FALSE")
+        }
+
+        shiny::updateSelectInput(
+          session,
+          "norm",
+          choices = choices,
+          selected = "all"
+        )
+      } else {
+        shiny::updateSelectInput(
+          session,
+          "norm",
+          choices = c("All" = "all"),
+          selected = "all"
+        )
+      }
+    },
+    ignoreInit = FALSE
+  )
+
+  # ---------------------------------------------------------------------------
+  # Update logFC slider
+  # ---------------------------------------------------------------------------
+
   observe({
+    df <- selected_simulation_data()
+
+    max_lfc <- max(abs(df$log2FoldChange), na.rm = TRUE)
+
+    if (!is.finite(max_lfc)) {
+      max_lfc <- 4
+    }
+
     shiny::updateSliderInput(
       session,
       "logfc",
       min = 0,
-      max = round(max(abs(data$log2FoldChange), na.rm = TRUE)),
+      max = ceiling(max_lfc),
       value = 0,
       step = 0.01
     )
   })
 
-  # ---- Volcano data ----
-  volcano_data <- shiny::reactive({
-    req(input$data, input$de_method, input$formula, input$norm)
+  # ---------------------------------------------------------------------------
+  # Volcano data
+  # ---------------------------------------------------------------------------
 
-    df <- data |>
+  volcano_data <- shiny::reactive({
+    req(input$de_method, input$formula, input$norm)
+
+    df <- selected_simulation_data() |>
       dplyr::filter(
-        analysis == input$data,
         method == input$de_method,
         formula == input$formula
       )
 
-    # ---- NEW: apply norm filter only if requested and column exists ----
     if (input$norm != "all" && "norm" %in% names(df)) {
       df <- df |>
         dplyr::filter(norm == as.logical(input$norm))
@@ -212,26 +442,58 @@ mod_volcano_server <- function(input, output, session, data) {
 
     df |>
       dplyr::mutate(
-        neg_log10_pvalue = -log10(pvalue),
-        is_true_de = trueDE == 1,
+        pvalue_safe = dplyr::if_else(
+          is.na(pvalue),
+          NA_real_,
+          pmax(pvalue, .Machine$double.xmin)
+        ),
+        padj_safe = dplyr::if_else(
+          is.na(padj),
+          NA_real_,
+          pmax(padj, .Machine$double.xmin)
+        ),
+        neg_log10_pvalue = -log10(pvalue_safe),
+        neg_log10_padj = -log10(padj_safe),
+        is_true_de = dplyr::if_else(is.na(trueDE), FALSE, trueDE),
         significance = dplyr::case_when(
-          padj <= as.numeric(input$pvalue) & log2FoldChange >  input$logfc ~ "Upregulated",
-          padj <= as.numeric(input$pvalue) & log2FoldChange < -input$logfc ~ "Downregulated",
+          !is.na(padj) &
+            padj <= as.numeric(input$pvalue) &
+            log2FoldChange > input$logfc ~ "Upregulated",
+
+          !is.na(padj) &
+            padj <= as.numeric(input$pvalue) &
+            log2FoldChange < -input$logfc ~ "Downregulated",
+
           TRUE ~ "Not significant"
         )
       )
   })
 
-  # ---- Volcano plot object ----
+  # ---------------------------------------------------------------------------
+  # Volcano plot
+  # ---------------------------------------------------------------------------
+
   volcano_plot_obj <- shiny::reactive({
     df <- as.data.frame(volcano_data())
-    validate(shiny::need(nrow(df) > 0, "No data available"))
+
+    validate(
+      shiny::need(nrow(df) > 0, "No data available for this selection.")
+    )
 
     max_es <- ceiling(max(abs(df$log2FoldChange), na.rm = TRUE))
+
+    if (!is.finite(max_es) || max_es == 0) {
+      max_es <- 1
+    }
+
     x_lims <- c(-max_es, max_es)
 
     if (isTRUE(input$highlight_truede)) {
-      df$significance <- ifelse(df$is_true_de, "true DE", df$significance)
+      df$significance <- ifelse(
+        df$is_true_de,
+        "true DE",
+        df$significance
+      )
 
       counts <- df |>
         dplyr::count(significance) |>
@@ -261,14 +523,19 @@ mod_volcano_server <- function(input, output, session, data) {
     volcano_plot(
       data = df,
       x = "log2FoldChange",
-      y = "padj",
+      y = "pvalue_safe",
       color_col = "significance",
       colors = colors,
       color_labels = labels,
       labels = "gene",
       x_axis_title = "Effect size",
-      y_axis_title = "Adjusted p-value",
-      plot_title = paste("Volcano Plot -", input$de_method),
+      y_axis_title = "P-value (-log10 scale)",
+      plot_title = paste(
+        "Volcano Plot -",
+        selected_simulation_label(),
+        "-",
+        input$de_method
+      ),
       x_lims = x_lims,
       vline = input$logfc,
       label_size = 5
@@ -278,6 +545,10 @@ mod_volcano_server <- function(input, output, session, data) {
         text = ggplot2::element_text(size = 18)
       )
   })
+
+  # ---------------------------------------------------------------------------
+  # Render plot and table
+  # ---------------------------------------------------------------------------
 
   output$volcano_plot <- shiny::renderPlot({
     volcano_plot_obj()
@@ -295,22 +566,57 @@ mod_volcano_server <- function(input, output, session, data) {
     )
   })
 
-  # ---- Download ----
+  # ---------------------------------------------------------------------------
+  # Download
+  # ---------------------------------------------------------------------------
+
   plots_dir <- file.path(path.expand("~"), "Desktop", "plots")
-  if (!dir.exists(plots_dir)) dir.create(plots_dir, recursive = TRUE)
+
+  if (!dir.exists(plots_dir)) {
+    dir.create(plots_dir, recursive = TRUE)
+  }
 
   output$download_plot <- shiny::downloadHandler(
     filename = function() {
-      paste0("volcano_", input$data, "_", input$de_method, "_", Sys.Date(), ".png")
+      paste0(
+        "volcano_",
+        selected_simulation_label(),
+        "_",
+        input$de_method,
+        "_",
+        Sys.Date(),
+        ".png"
+      )
     },
     content = function(file) {
       desktop_file <- file.path(
         plots_dir,
-        paste0("volcano_", input$data, "_", input$de_method, "_", Sys.Date(), ".png")
+        paste0(
+          "volcano_",
+          selected_simulation_label(),
+          "_",
+          input$de_method,
+          "_",
+          Sys.Date(),
+          ".png"
+        )
       )
 
-      ggplot2::ggsave(desktop_file, plot = volcano_plot_obj(), width = 7, height = 6, dpi = 300)
-      ggplot2::ggsave(file,         plot = volcano_plot_obj(), width = 7, height = 7, dpi = 300)
+      ggplot2::ggsave(
+        filename = desktop_file,
+        plot = volcano_plot_obj(),
+        width = 7,
+        height = 6,
+        dpi = 300
+      )
+
+      ggplot2::ggsave(
+        filename = file,
+        plot = volcano_plot_obj(),
+        width = 7,
+        height = 7,
+        dpi = 300
+      )
     }
   )
 }

@@ -5,11 +5,12 @@ library(MAST)
 library(dplyr)
 library(edgeR)
 library(limma)
+board <- pins::board_local("nrgn-data")
 
 # Methods ----------------------------------------------------------------------
 # pseudobulk -------------------------------------------------------------------
 
-
+# Function to aggregate the data by samples (pseudobulk), usually by sampleID
 make_pseudobulk <- function(
     sce,
     ids,
@@ -22,6 +23,9 @@ make_pseudobulk <- function(
 
   if (verbose) message("Aggregating cells to pseudobulk...")
 
+  # Aggregate all the cell counts by chosen ids, usually sampleID,
+  # using sum as the aggregation function.
+
   pb <- scater::aggregateAcrossCells(
     sce,
     ids = ids,
@@ -29,6 +33,10 @@ make_pseudobulk <- function(
   )
 
   counts_mat <- SummarizedExperiment::assay(pb, "counts")
+
+  # Only keep the rows that have counts higher than min_counts across all
+  # samples. This is to avoid errors in downstream methods that cannot handle
+  # zero-count genes.
 
   keep_genes <- rowSums(counts_mat) >= min_counts
 
@@ -52,8 +60,10 @@ make_pseudobulk <- function(
   pb
 }
 
-## limma-voom pseudobulk --------------------------------------------------------
+## limma-voom -------------------------------------------------------
 
+# Apply limma-voom to the pseudobulk data, using the provided design formula and
+# coefficient name.
 run_limma_from_pseudobulk <- function(
     pb,
     design_formula,
@@ -64,6 +74,8 @@ run_limma_from_pseudobulk <- function(
   t_start <- proc.time()[["elapsed"]]
 
   counts <- SummarizedExperiment::assay(pb, "counts")
+
+  # Redundante
 
   keep_samples <- colSums(counts) > 0
 
@@ -448,7 +460,7 @@ run_mast_pseudobulk <- function(
 
   return(res)
 }
-## DESeq2 pseudobulk -----------------------------------------------------------
+## DESeq2 -----------------------------------------------------------
 run_deseq_from_pseudobulk <- function(
     pb,
     design_formula,
@@ -551,13 +563,22 @@ run_deseq_from_pseudobulk <- function(
       )
     }
 
-    res <- DESeq2::results(dds, name = coef_name, alpha = alpha)
+    res <- DESeq2::results(dds, name = coef_name,
+                           alpha = alpha,
+                           independentFiltering = FALSE,
+                           cooksCutoff = FALSE)
   } else {
-    res <- DESeq2::results(dds, alpha = alpha)
+    res <- DESeq2::results(dds,
+                           alpha = alpha,
+                           independentFiltering = FALSE,
+                           cooksCutoff = FALSE)
   }
 
   df <- as.data.frame(res)
   df$gene <- rownames(df)
+
+  df$padj <- p.adjust(df$pvalue, method = "BH")
+
   df <- df[order(df$padj, na.last = TRUE), ]
 
   df <- df |>
@@ -581,7 +602,7 @@ run_deseq_from_pseudobulk <- function(
 
   df
 }
-## Run selected methods --------------------------------------------------------
+# Run selected methods --------------------------------------------------------
 run_methods <- function(
     sce,
     relevel = list(Condition = "Placebo"),
@@ -747,7 +768,7 @@ run_methods <- function(
 }
 
 
-# Pipelines --------------------------------------------------------------------
+## Pipelines --------------------------------------------------------------------
 
 pipeline_rescue_and_methods <- function(
     sce,
@@ -791,34 +812,67 @@ pipeline_rescue_and_methods <- function(
   )
 }
 
-# Run Simulations  -------------------------------------------------------------
-# Read pins with simulations
-simulation <- pins::pin_read(board, "simulations_final")
+# Run Simulations / Methods ----------------------------------------------------
+# This version keeps the old simulations and also adds fair simulations if present
 
-sim_rescue      <- simulation$rescueSim
-sim_rescue_123  <- simulation$rescueSim_123
-sim_rescue_111  <- simulation$rescueSim_111
-sim_rescue_222  <- simulation$rescueSim_222
-sim_rescue_333  <- simulation$rescueSim_333
+board <- pins::board_local("nrgn-data")
 
+# Read old simulations
+old_simulations <- pins::pin_read(board, "simulations_final")
+old_ground_truth <- pins::pin_read(board, "ground_truth_final")
 
-sim_rescue_norm      <- simulation[["rescueSim norm"]]
-sim_rescue_123_norm  <- simulation[["rescueSim_123 norm"]]
-sim_rescue_111_norm  <- simulation[["rescueSim_111 norm"]]
-sim_rescue_222_norm  <- simulation[["rescueSim_222 norm"]]
-sim_rescue_333_norm  <- simulation[["rescueSim_333 norm"]]
+# Try to read fair simulations, if you already created them
+fair_simulations <- tryCatch(
+  pins::pin_read(board, "fair_rescue_simulations"),
+  error = function(e) {
+    message("No fair_rescue_simulations pin found. Running only old simulations.")
+    NULL
+  }
+)
 
+fair_ground_truth <- tryCatch(
+  pins::pin_read(board, "fair_rescue_ground_truth"),
+  error = function(e) {
+    message("No fair_rescue_ground_truth pin found. Running only old ground truth.")
+    NULL
+  }
+)
 
+fair_grid <- tryCatch(
+  pins::pin_read(board, "fair_rescue_grid"),
+  error = function(e) {
+    message("No fair_rescue_grid pin found.")
+    NULL
+  }
+)
 
+# Combine old + fair, without deleting old simulations
+if (!is.null(fair_simulations)) {
+  all_simulations <- c(old_simulations, fair_simulations)
+} else {
+  all_simulations <- old_simulations
+}
 
-# ------------------------------------------------------------------------------
-# RescueSim pseudobulk runs
-# ------------------------------------------------------------------------------
+if (!is.null(fair_ground_truth)) {
+  all_ground_truth <- c(old_ground_truth, fair_ground_truth)
+} else {
+  all_ground_truth <- old_ground_truth
+}
+
+# Keep only rescueSim-style simulations for this paired longitudinal workflow
+# This excludes splatpop because splatpop does not have group/time/subjectID
+rescue_sims <- all_simulations[
+  grepl("^rescueSim|^fair_", names(all_simulations))
+]
+
+# Check names
+names(rescue_sims)
+# RescueSim pseudobulk runs ----------------------------------------------------
 
 prepare_rescue_sce <- function(
     sce,
     group_ref = "Placebo",
-    time_ref = "EoT"
+    time_ref = "Baseline"
 ) {
   sce_ref <- sce
 
@@ -827,37 +881,60 @@ prepare_rescue_sce <- function(
   cd$group <- stats::relevel(as.factor(cd$group), ref = group_ref)
   cd$time <- stats::relevel(as.factor(cd$time), ref = time_ref)
 
+  # Numeric coding for the paired difference-in-differences effect
+  cd$time_num <- as.integer(cd$time == "EoT")
+  cd$treat_num <- as.integer(cd$group == "Treatment")
+  cd$trt_time <- cd$treat_num * cd$time_num
+
   SummarizedExperiment::colData(sce_ref) <- S4Vectors::DataFrame(cd)
 
   sce_ref
 }
 
-
 run_rescue_methods <- function(
     sce,
     analysis_name,
-    ids_vars = c("subjectID", "time"),
+    ids_vars = c("subjectID", "time", "time_num", "trt_time"),
     min_counts = 10,
     verbose = TRUE
 ) {
   sce_ref <- prepare_rescue_sce(
     sce = sce,
     group_ref = "Placebo",
-    time_ref = "EoT"
+    time_ref = "Baseline"
   )
 
   out <- list()
 
-  # MAST with CDR, normalized
+  design_pb <- ~ subjectID + time_num + trt_time
+  design_mast <- ~ subjectID + time_num + trt_time + cngeneson
+
   out$mast_cdr <- pipeline_rescue_and_methods(
     sce = sce_ref,
     run_mast = TRUE,
     run_deseq = FALSE,
-    design_formula_mast = ~ time + group:time + subjectID + cngeneson,
-    lrt_term_mast = "timeEoT:groupTreatment",
+    run_edger = FALSE,
+    run_limma = FALSE,
+    design_formula_mast = design_mast,
+    lrt_term_mast = "trt_time",
     ids_vars = ids_vars,
-    relevel = list(group = "Placebo", time = "EoT"),
+    relevel = NULL,
     norm = TRUE,
+    min_counts = min_counts,
+    verbose = verbose
+  )
+
+  out$mast_cdr_nn <- pipeline_rescue_and_methods(
+    sce = sce_ref,
+    run_mast = TRUE,
+    run_deseq = FALSE,
+    run_edger = FALSE,
+    run_limma = FALSE,
+    design_formula_mast = design_mast,
+    lrt_term_mast = "trt_time",
+    ids_vars = ids_vars,
+    relevel = NULL,
+    norm = FALSE,
     min_counts = min_counts,
     verbose = verbose
   )
@@ -868,37 +945,24 @@ run_rescue_methods <- function(
     run_deseq = FALSE,
     run_edger = FALSE,
     run_limma = TRUE,
-    design_formula_limma = ~ time + group:time,
-    lrt_term_limma = "timeEoT:groupTreatment",
+    design_formula_limma = design_pb,
+    lrt_term_limma = "trt_time",
     ids_vars = ids_vars,
-    relevel = list(group = "Placebo", time = "EoT"),
+    relevel = NULL,
     min_counts = min_counts,
     verbose = verbose
   )
 
-  # MAST with CDR, non-normalized
-  out$mast_cdr_nn <- pipeline_rescue_and_methods(
-    sce = sce_ref,
-    run_mast = TRUE,
-    run_deseq = FALSE,
-    design_formula_mast = ~ time + group:time + subjectID + cngeneson,
-    lrt_term_mast = "timeEoT:groupTreatment",
-    ids_vars = ids_vars,
-    relevel = list(group = "Placebo", time = "EoT"),
-    norm = FALSE,
-    min_counts = min_counts,
-    verbose = verbose
-  )
-
-  # DESeq2 standard old formula
   out$deseq_s <- pipeline_rescue_and_methods(
     sce = sce_ref,
     run_mast = FALSE,
     run_deseq = TRUE,
-    design_formula_deseq = ~ time + group:time,
-    lrt_term_deseq = "timeEoT.groupTreatment",
+    run_edger = FALSE,
+    run_limma = FALSE,
+    design_formula_deseq = design_pb,
+    lrt_term_deseq = "trt_time",
     ids_vars = ids_vars,
-    relevel = list(group = "Placebo", time = "EoT"),
+    relevel = NULL,
     min_counts = min_counts,
     verbose = verbose
   )
@@ -908,15 +972,15 @@ run_rescue_methods <- function(
     run_mast = FALSE,
     run_deseq = FALSE,
     run_edger = TRUE,
-    design_formula_edger = ~ time + group:time,
-    lrt_term_edger = "timeEoT:groupTreatment",
+    run_limma = FALSE,
+    design_formula_edger = design_pb,
+    lrt_term_edger = "trt_time",
     ids_vars = ids_vars,
-    relevel = list(group = "Placebo", time = "EoT"),
+    relevel = NULL,
     min_counts = min_counts,
     verbose = verbose
   )
 
-  # Add labels
   for (variant in names(out)) {
     for (method in names(out[[variant]])) {
       out[[variant]][[method]]$analysis <- analysis_name
@@ -926,27 +990,24 @@ run_rescue_methods <- function(
 
   out
 }
-
-rescue_sims <- list(
-  "rescueSim" = sim_rescue,
-  "rescueSim (123)" = sim_rescue_123,
-  "rescueSim (111)" = sim_rescue_111,
-  "rescueSim (222)" = sim_rescue_222,
-  "rescueSim (333)" = sim_rescue_333,
-  "rescueSim (norm)" = sim_rescue_norm,
-  "rescueSim (123) (norm)" = sim_rescue_123_norm,
-  "rescueSim (111) (norm)" = sim_rescue_111_norm,
-  "rescueSim (222) (norm)" = sim_rescue_222_norm,
-  "rescueSim (333) (norm)" = sim_rescue_333_norm
-)
+# ------------------------------------------------------------------------------
+# Run methods on all rescue simulations
+# ------------------------------------------------------------------------------
 
 rescue_results <- lapply(
   names(rescue_sims),
   function(nm) {
+    message("Running methods for: ", nm)
+
     run_rescue_methods(
       sce = rescue_sims[[nm]],
       analysis_name = nm,
-      ids_vars = c("subjectID", "time"),
+
+      # IMPORTANT:
+      # Do not use only c("subjectID", "time").
+      # The pseudobulk metadata needs time_num and trt_time for the model.
+      ids_vars = c("subjectID", "time", "time_num", "trt_time"),
+
       min_counts = 10,
       verbose = TRUE
     )
@@ -965,8 +1026,12 @@ flatten_method_results <- function(results_list) {
       variant_results <- analysis_results[[variant_name]]
 
       for (method_name in names(variant_results)) {
-        key <- paste(analysis_name, variant_name, method_name, sep = "__")
-        flat[[key]] <- variant_results[[method_name]]
+        x <- variant_results[[method_name]]
+
+        if (!is.null(x) && nrow(x) > 0) {
+          key <- paste(analysis_name, variant_name, method_name, sep = "__")
+          flat[[key]] <- x
+        }
       }
     }
   }
@@ -975,26 +1040,27 @@ flatten_method_results <- function(results_list) {
 }
 
 rescue_method_tables <- flatten_method_results(rescue_results)
+
 method_data <- data.table::rbindlist(
   rescue_method_tables,
   fill = TRUE
 )
+
+
 # Pin data ---------------------------------------------------------------------
-
-board <- pins::board_local("nrgn-data")
-
 pins::pin_write(
   method_data,
-  name = "method_data_paper",
+  name = "method_data_paper_plus_fair",
   type = "rds",
   board = board,
   versioned = TRUE
 )
 
-# Merge ground_truth with method data ------------------------------------------
+# ------------------------------------------------------------------------------
+# Merge method data with ground truth
+# ------------------------------------------------------------------------------
 
-method_data <- pins::pin_read(board, "method_data_paper")
-ground_truth <- pins::pin_read(board, "ground_truth_final")
+method_data <- pins::pin_read(board, "method_data_paper_plus_fair")
 
 make_analysis_join <- function(x) {
   x |>
@@ -1020,46 +1086,91 @@ method_data <- method_data |>
     analysis_join = make_analysis_join(analysis)
   )
 
-rescue_truth_names <- c(
-  "rescueSim",
-  "rescueSim_123",
-  "rescueSim_111",
-  "rescueSim_222",
-  "rescueSim_333",
-  "rescueSim norm",
-  "rescueSim_123 norm",
-  "rescueSim_111 norm",
-  "rescueSim_222 norm",
-  "rescueSim_333 norm"
+truth_names <- intersect(
+  unique(method_data$analysis_join),
+  names(all_ground_truth)
 )
 
 compare_data <- dplyr::bind_rows(
-  lapply(rescue_truth_names, function(sim) {
+  lapply(truth_names, function(sim) {
     dplyr::left_join(
       method_data |> dplyr::filter(analysis_join == sim),
-      ground_truth[[sim]],
+      all_ground_truth[[sim]],
       by = "gene"
     )
   })
 )
 
+# Add fair scenario metadata if available
+if (!is.null(fair_grid)) {
+  compare_data <- compare_data |>
+    dplyr::left_join(
+      fair_grid |>
+        dplyr::select(
+          sim_name,
+          scenario,
+          nSubjsPerGroup,
+          seed,
+          prop_time,
+          prop_trt,
+          time_sd,
+          trt_lfc_mean,
+          trt_lfc_sd
+        ),
+      by = c("analysis_join" = "sim_name")
+    )
+}
+
 pins::pin_write(
   compare_data,
-  name = "compare_data_paper",
+  name = "compare_data_paper_plus_fair",
   type = "rds",
   board = board,
   versioned = TRUE
 )
 
+
 # CI coverage summary ----------------------------------------------------------
 
-compare_data <- pins::pin_read(board, "compare_data_paper")
+compare_data <- pins::pin_read(board, "compare_data_paper_plus_fair")
+
+# Clean scenario/n/seed columns if they exist as .x/.y
+compare_data <- compare_data |>
+  dplyr::mutate(
+    scenario = dplyr::coalesce(
+      if ("scenario" %in% names(compare_data)) scenario else NA_character_,
+      if ("scenario.x" %in% names(compare_data)) scenario.x else NA_character_,
+      if ("scenario.y" %in% names(compare_data)) scenario.y else NA_character_
+    ),
+    nSubjsPerGroup = dplyr::coalesce(
+      if ("nSubjsPerGroup" %in% names(compare_data)) nSubjsPerGroup else NA_real_,
+      if ("nSubjsPerGroup.x" %in% names(compare_data)) nSubjsPerGroup.x else NA_real_,
+      if ("nSubjsPerGroup.y" %in% names(compare_data)) nSubjsPerGroup.y else NA_real_
+    ),
+    seed = dplyr::coalesce(
+      if ("seed" %in% names(compare_data)) seed else NA_real_,
+      if ("seed.x" %in% names(compare_data)) seed.x else NA_real_,
+      if ("seed.y" %in% names(compare_data)) seed.y else NA_real_
+    )
+  ) |>
+  dplyr::select(
+    -dplyr::any_of(c(
+      "scenario.x", "scenario.y",
+      "nSubjsPerGroup.x", "nSubjsPerGroup.y",
+      "seed.x", "seed.y"
+    ))
+  )
 
 summarise_ci_coverage <- function(df, conf_level = 0.95) {
   z <- qnorm(1 - (1 - conf_level) / 2)
 
   df <- df |>
-    dplyr::filter(!is.na(trueDE), !is.na(true_logFC)) |>
+    dplyr::filter(
+      !is.na(trueDE),
+      !is.na(true_logFC),
+      !is.na(log2FoldChange),
+      !is.na(lfcSE)
+    ) |>
     dplyr::mutate(
       lower = log2FoldChange - z * lfcSE,
       upper = log2FoldChange + z * lfcSE,
@@ -1086,70 +1197,42 @@ summarise_ci_coverage <- function(df, conf_level = 0.95) {
     in_ci_not_sig = sum(df$in_ci & df$regulation == "not_sig", na.rm = TRUE)
   )
 }
-compute_ci_summary <- function(
-    compare_data,
-    analyses,
-    analysis_key = "analysis_join",
-    ci_level = 0.95
-) {
-  compare_data |>
-    dplyr::filter(.data[[analysis_key]] %in% analyses) |>
-    dplyr::group_by(.data[[analysis_key]], method, formula) |>
-    dplyr::group_modify(~ summarise_ci_coverage(.x, conf_level = ci_level)) |>
-    dplyr::ungroup() |>
-    dplyr::rename(analysis = .data[[analysis_key]]) |>
-    dplyr::mutate(
-      conf_level = ci_level,
-      prop_ci_total = in_ci_total / total_genes,
-      prop_ci_up = dplyr::if_else(total_up > 0, in_ci_up / total_up, NA_real_),
-      prop_ci_down = dplyr::if_else(total_down > 0, in_ci_down / total_down, NA_real_),
-      prop_ci_not_sig = dplyr::if_else(
-        total_not_sig > 0,
-        in_ci_not_sig / total_not_sig,
-        NA_real_
-      )
-    )
-}
-
 ci_level <- 0.95
 
-rescue_analyses <- c(
-  "rescueSim",
-  "rescueSim_123",
-  "rescueSim_111",
-  "rescueSim_222",
-  "rescueSim_333"
-)
 
-rescue_norm_analyses <- c(
-  "rescueSim norm",
-  "rescueSim_123 norm",
-  "rescueSim_111 norm",
-  "rescueSim_222 norm",
-  "rescueSim_333 norm"
-)
 
-ci_data <- dplyr::bind_rows(
-  compute_ci_summary(
-    compare_data = compare_data,
-    analyses = rescue_analyses,
-    analysis_key = "analysis_join",
-    ci_level = ci_level
+ci_data <- compare_data |>
+  dplyr::group_by(
+    analysis,
+    analysis_join,
+    method,
+    formula,
+    norm
   ) |>
-    dplyr::mutate(sim = "rescueSim"),
+  dplyr::group_modify(~ summarise_ci_coverage(.x, conf_level = ci_level)) |>
+  dplyr::ungroup() |>
+  dplyr::mutate(
+    conf_level = ci_level,
+    prop_ci_total = in_ci_total / total_genes,
 
-  compute_ci_summary(
-    compare_data = compare_data,
-    analyses = rescue_norm_analyses,
-    analysis_key = "analysis_join",
-    ci_level = ci_level
-  ) |>
-    dplyr::mutate(sim = "rescueSim norm")
-)
+    total_sig = total_up + total_down,
+    in_ci_sig = in_ci_up + in_ci_down,
+    prop_ci_sig = dplyr::if_else(
+      total_sig > 0,
+      in_ci_sig / total_sig,
+      NA_real_
+    ),
+
+    prop_ci_not_sig = dplyr::if_else(
+      total_not_sig > 0,
+      in_ci_not_sig / total_not_sig,
+      NA_real_
+    )
+  )
 
 pins::pin_write(
   ci_data,
-  name = "rescueSim_ci_paper",
+  name = "rescueSim_ci_paper_plus_fair",
   type = "rds",
   board = board,
   versioned = TRUE
