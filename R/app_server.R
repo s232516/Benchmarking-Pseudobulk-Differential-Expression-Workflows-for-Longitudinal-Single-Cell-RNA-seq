@@ -210,6 +210,19 @@ app_server <- function(input, output, session) {
     data = ci_data
   )
 
+  # callModule(
+  #   module = mod_tpr_line_server,
+  #   id = "tpr_line_module",
+  #   data = compare_data
+  # )
+  #
+  # callModule(
+  #   module = mod_ci_summary_server,
+  #   id = "ci_summary_module",
+  #   data = ci_data
+  # )
+
+
   # callModule(mod_gt_server, "gt", data = compare)
 
   # callModule(mod_hist_logfc_server, "hist_module", data = compare)
