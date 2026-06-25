@@ -1,10 +1,23 @@
-# Simulation functions----------------------------------------------------------
-## TRT -------------------------------------------------------------------------
-### SplatPop -------------------------------------------------------------------
-#### SplatPop params -----------------------------------------------------------
+# Simulation functions ----------------------------------------------------------
+## Fair rescueSim benchmark -----------------------------------------------------
+
 # ------------------------------------------------------------------------------
 # Fair rescueSim benchmark simulations
-# Keeps existing simulations and adds new fair benchmark simulations
+#
+# Memory-safe version
+#
+# What this does:
+#   - creates 30 simulations per scenario and nSubjsPerGroup
+#   - saves each SingleCellExperiment as an individual .rds file
+#   - saves each ground truth table as an individual .rds file
+#   - pins only the small metadata/path tables
+#
+# Total simulations:
+#   5 scenarios * 3 n values * 30 seeds = 450 simulations
+#
+# IMPORTANT:
+#   This file does NOT create fair_rescue_simulations <- list()
+#   because that is what was causing the memory crash.
 # ------------------------------------------------------------------------------
 
 library(dplyr)
@@ -13,6 +26,10 @@ library(SummarizedExperiment)
 library(S4Vectors)
 library(scater)
 library(pins)
+
+# ------------------------------------------------------------------------------
+# Create fair rescueSim parameters
+# ------------------------------------------------------------------------------
 
 make_rescuesim_fair_params <- function(
     RecAM_sce,
@@ -44,14 +61,21 @@ make_rescuesim_fair_params <- function(
 
   # --------------------------------------------------------------------------
   # 1) Shared time effect
+  #
   # This affects placebo and treatment equally.
   # It should NOT be detected as treatment effect.
   # --------------------------------------------------------------------------
+
   time_effect <- rep(0, G)
 
   if (prop_time > 0 && time_sd > 0) {
     n_time <- round(prop_time * G)
-    time_idx <- sample.int(G, n_time, replace = FALSE)
+
+    time_idx <- sample.int(
+      n = G,
+      size = n_time,
+      replace = FALSE
+    )
 
     time_effect[time_idx] <- rnorm(
       n = n_time,
@@ -62,15 +86,26 @@ make_rescuesim_fair_params <- function(
 
   # --------------------------------------------------------------------------
   # 2) Extra treatment-by-time effect
-  # This is the real DE signal you want methods to detect.
+  #
+  # This is the true DE signal that methods should detect.
   # --------------------------------------------------------------------------
+
   trt_extra <- rep(0, G)
 
   if (prop_trt > 0 && trt_lfc_mean > 0) {
     n_trt <- round(prop_trt * G)
-    trt_idx <- sample.int(G, n_trt, replace = FALSE)
 
-    trt_sign <- sample(c(-1, 1), n_trt, replace = TRUE)
+    trt_idx <- sample.int(
+      n = G,
+      size = n_trt,
+      replace = FALSE
+    )
+
+    trt_sign <- sample(
+      x = c(-1, 1),
+      size = n_trt,
+      replace = TRUE
+    )
 
     trt_magnitude <- abs(rnorm(
       n = n_trt,
@@ -100,22 +135,38 @@ make_rescuesim_fair_params <- function(
   p
 }
 
+# ------------------------------------------------------------------------------
+# Simulate one fair rescueSim dataset
+# ------------------------------------------------------------------------------
+
 simulate_rescue_fair <- function(
     params,
     scenario_name,
     scenario,
     nSubjsPerGroup,
-    seed
+    seed,
+    compute_dimred = FALSE
 ) {
+  if (!is.null(seed)) set.seed(seed)
+
   sim <- rescueSim::simRescueData(params)
 
-  sim <- scater::logNormCounts(sim)
-  sim <- scater::runPCA(sim, ncomponents = 10)
-  sim <- scater::runUMAP(sim, dimred = "PCA")
+  # For benchmarking methods, PCA/UMAP are not needed.
+  # Keeping this FALSE saves memory and disk space.
+  if (compute_dimred) {
+    sim <- scater::logNormCounts(sim)
+    sim <- scater::runPCA(sim, ncomponents = 10)
+    sim <- scater::runUMAP(sim, dimred = "PCA")
+  }
 
   cd <- as.data.frame(SummarizedExperiment::colData(sim))
 
-  cd$Sample <- cd$SampleID
+  # rescueSim sometimes has both SampleID and sampleID depending on object version.
+  if ("SampleID" %in% colnames(cd)) {
+    cd$Sample <- cd$SampleID
+  } else if ("sampleID" %in% colnames(cd)) {
+    cd$Sample <- cd$sampleID
+  }
 
   cd$group <- factor(
     cd$group,
@@ -129,8 +180,8 @@ simulate_rescue_fair <- function(
     labels = c("Baseline", "EoT")
   )
 
-  cd$group <- relevel(factor(cd$group), ref = "Placebo")
-  cd$time <- relevel(factor(cd$time), ref = "Baseline")
+  cd$group <- stats::relevel(factor(cd$group), ref = "Placebo")
+  cd$time <- stats::relevel(factor(cd$time), ref = "Baseline")
 
   cd$Condition <- paste0(cd$group, "_", cd$time)
 
@@ -145,7 +196,10 @@ simulate_rescue_fair <- function(
 
   SummarizedExperiment::colData(sim) <- S4Vectors::DataFrame(cd)
 
+  # --------------------------------------------------------------------------
   # Ground truth
+  # --------------------------------------------------------------------------
+
   g0 <- SummarizedExperiment::rowData(sim)$deLog2FC.time1_group0
   g1 <- SummarizedExperiment::rowData(sim)$deLog2FC.time1_group1
 
@@ -185,6 +239,9 @@ simulate_rescue_fair <- function(
 # Benchmark grid
 # ------------------------------------------------------------------------------
 
+n_sims_per_setting <- 30
+base_seed <- 202600
+
 fair_rescue_grid <- tidyr::crossing(
   scenario = c(
     "global_null",
@@ -194,7 +251,7 @@ fair_rescue_grid <- tidyr::crossing(
     "strong"
   ),
   nSubjsPerGroup = c(5, 10, 20),
-  seed = c(42, 111, 123, 222, 333)
+  seed = base_seed + seq_len(n_sims_per_setting)
 ) |>
   dplyr::mutate(
     prop_time = dplyr::case_when(
@@ -235,17 +292,53 @@ fair_rescue_grid <- tidyr::crossing(
       seed
     )
   )
+
+# Check that the grid is correct
+print(
+  fair_rescue_grid |>
+    dplyr::count(scenario, nSubjsPerGroup)
+)
+
+print(nrow(fair_rescue_grid))
+# Should be 450
+
 # ------------------------------------------------------------------------------
-# Run fair rescueSim simulations
+# Run fair rescueSim simulations safely
+#
+# This is the key part.
+# It saves one simulation, removes it from memory, then continues.
 # ------------------------------------------------------------------------------
 
 data("RecAM_sce", package = "rescueSim")
 
-fair_rescue_simulations <- list()
-fair_rescue_ground_truth <- list()
+board <- pins::board_local("nrgn-data")
+
+base_dir <- "nrgn-data"
+
+sim_dir <- file.path(base_dir, "fair_rescue_simulation_files")
+truth_dir <- file.path(base_dir, "fair_rescue_ground_truth_files")
+
+dir.create(sim_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(truth_dir, recursive = TRUE, showWarnings = FALSE)
+
+fair_rescue_sim_paths <- list()
+
+# If FALSE, already-created files are skipped.
+# This lets you resume after a crash or after stopping the script.
+force_rerun <- FALSE
 
 for (i in seq_len(nrow(fair_rescue_grid))) {
   row_i <- fair_rescue_grid[i, ]
+
+  sim_file <- file.path(
+    sim_dir,
+    paste0(row_i$sim_name, ".rds")
+  )
+
+  truth_file <- file.path(
+    truth_dir,
+    paste0(row_i$sim_name, "_truth.rds")
+  )
 
   message(
     "Running ",
@@ -255,6 +348,35 @@ for (i in seq_len(nrow(fair_rescue_grid))) {
     ": ",
     row_i$sim_name
   )
+
+  # --------------------------------------------------------------------------
+  # Skip if already saved
+  # --------------------------------------------------------------------------
+
+  if (!force_rerun && file.exists(sim_file) && file.exists(truth_file)) {
+    message("Files already exist. Skipping: ", row_i$sim_name)
+
+    fair_rescue_sim_paths[[row_i$sim_name]] <- data.frame(
+      simulation = row_i$sim_name,
+      file = sim_file,
+      ground_truth_file = truth_file,
+      scenario = row_i$scenario,
+      nSubjsPerGroup = row_i$nSubjsPerGroup,
+      seed = row_i$seed,
+      prop_time = row_i$prop_time,
+      prop_trt = row_i$prop_trt,
+      time_sd = row_i$time_sd,
+      trt_lfc_mean = row_i$trt_lfc_mean,
+      trt_lfc_sd = row_i$trt_lfc_sd,
+      stringsAsFactors = FALSE
+    )
+
+    next
+  }
+
+  # --------------------------------------------------------------------------
+  # Simulate
+  # --------------------------------------------------------------------------
 
   params_i <- make_rescuesim_fair_params(
     RecAM_sce = RecAM_sce,
@@ -272,48 +394,108 @@ for (i in seq_len(nrow(fair_rescue_grid))) {
     scenario_name = row_i$sim_name,
     scenario = row_i$scenario,
     nSubjsPerGroup = row_i$nSubjsPerGroup,
-    seed = row_i$seed
+    seed = row_i$seed,
+    compute_dimred = FALSE
   )
 
-  fair_rescue_simulations[[row_i$sim_name]] <- sim_i$sce
-  fair_rescue_ground_truth[[row_i$sim_name]] <- sim_i$ground_truth
+  # --------------------------------------------------------------------------
+  # Save to disk immediately
+  # --------------------------------------------------------------------------
+
+  saveRDS(
+    sim_i$sce,
+    file = sim_file,
+    compress = "gzip"
+  )
+
+  saveRDS(
+    sim_i$ground_truth,
+    file = truth_file,
+    compress = "gzip"
+  )
+
+  # --------------------------------------------------------------------------
+  # Store only paths and metadata in memory
+  # --------------------------------------------------------------------------
+
+  fair_rescue_sim_paths[[row_i$sim_name]] <- data.frame(
+    simulation = row_i$sim_name,
+    file = sim_file,
+    ground_truth_file = truth_file,
+    scenario = row_i$scenario,
+    nSubjsPerGroup = row_i$nSubjsPerGroup,
+    seed = row_i$seed,
+    prop_time = row_i$prop_time,
+    prop_trt = row_i$prop_trt,
+    time_sd = row_i$time_sd,
+    trt_lfc_mean = row_i$trt_lfc_mean,
+    trt_lfc_sd = row_i$trt_lfc_sd,
+    stringsAsFactors = FALSE
+  )
+
+  # Remove heavy objects
+  rm(params_i, sim_i)
+  gc()
 }
+
+fair_rescue_sim_paths <- dplyr::bind_rows(fair_rescue_sim_paths)
+
+# ------------------------------------------------------------------------------
+# Ground truth summary
+#
+# This reads one ground truth file at a time.
+# It does not load all SCEs.
+# ------------------------------------------------------------------------------
+
 fair_truth_summary <- dplyr::bind_rows(
-  lapply(names(fair_rescue_ground_truth), function(nm) {
-    fair_rescue_ground_truth[[nm]] |>
+  lapply(seq_len(nrow(fair_rescue_sim_paths)), function(i) {
+    truth_i <- readRDS(fair_rescue_sim_paths$ground_truth_file[i])
+
+    out <- truth_i |>
       dplyr::summarise(
-        simulation = nm,
+        simulation = unique(simulation),
         scenario = unique(scenario),
         nSubjsPerGroup = unique(nSubjsPerGroup),
         seed = unique(seed),
         n_genes = dplyr::n(),
         n_true_de = sum(trueDE),
         prop_true_de = mean(trueDE),
+        n_treatment_time = sum(effect_type == "treatment_time"),
+        n_time_only = sum(effect_type == "time_only"),
+        n_null = sum(effect_type == "null"),
         median_abs_true_lfc = median(abs(true_logFC), na.rm = TRUE),
-        max_abs_true_lfc = max(abs(true_logFC), na.rm = TRUE)
+        max_abs_true_lfc = max(abs(true_logFC), na.rm = TRUE),
+        .groups = "drop"
       )
+
+    rm(truth_i)
+    gc()
+
+    out
   })
 )
 
-fair_truth_summary |>
-  dplyr::arrange(scenario, nSubjsPerGroup, seed)
-# ------------------------------------------------------------------------------
-# Save fair benchmark separately
-# ------------------------------------------------------------------------------
-
-board <- pins::board_local("nrgn-data")
-
-pins::pin_write(
-  fair_rescue_simulations,
-  name = "fair_rescue_simulations",
-  type = "rds",
-  board = board,
-  versioned = TRUE
+print(
+  fair_truth_summary |>
+    dplyr::arrange(scenario, nSubjsPerGroup, seed)
 )
 
+# Check: should be 30 for every scenario and n
+print(
+  fair_truth_summary |>
+    dplyr::count(scenario, nSubjsPerGroup)
+)
+
+# ------------------------------------------------------------------------------
+# Save fair benchmark metadata
+#
+# Important:
+#   We pin paths, not the full list of SingleCellExperiment objects.
+# ------------------------------------------------------------------------------
+
 pins::pin_write(
-  fair_rescue_ground_truth,
-  name = "fair_rescue_ground_truth",
+  fair_rescue_sim_paths,
+  name = "fair_rescue_sim_paths",
   type = "rds",
   board = board,
   versioned = TRUE
@@ -334,3 +516,37 @@ pins::pin_write(
   board = board,
   versioned = TRUE
 )
+
+# ------------------------------------------------------------------------------
+# Optional helper: read one simulation later
+# ------------------------------------------------------------------------------
+
+read_fair_simulation <- function(simulation_name, board = pins::board_local("nrgn-data")) {
+  paths <- pins::pin_read(board, "fair_rescue_sim_paths")
+
+  row_i <- paths |>
+    dplyr::filter(simulation == simulation_name)
+
+  if (nrow(row_i) != 1) {
+    stop("Could not find exactly one simulation called: ", simulation_name)
+  }
+
+  readRDS(row_i$file)
+}
+
+read_fair_ground_truth <- function(simulation_name, board = pins::board_local("nrgn-data")) {
+  paths <- pins::pin_read(board, "fair_rescue_sim_paths")
+
+  row_i <- paths |>
+    dplyr::filter(simulation == simulation_name)
+
+  if (nrow(row_i) != 1) {
+    stop("Could not find exactly one simulation called: ", simulation_name)
+  }
+
+  readRDS(row_i$ground_truth_file)
+}
+
+# ------------------------------------------------------------------------------
+# End
+# ------------------------------------------------------------------------------
