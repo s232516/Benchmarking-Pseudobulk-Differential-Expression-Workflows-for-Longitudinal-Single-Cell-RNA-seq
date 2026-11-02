@@ -1,142 +1,52 @@
-# Simulation functions----------------------------------------------------------
-## TRT -------------------------------------------------------------------------
-### SplatPop -------------------------------------------------------------------
-#### SplatPop params -----------------------------------------------------------
-make_splatpop_params <- function(eqtl.n = 0.5,
-                                 batchCells = 100,
-                                 similarity.scale = 6,
-                                 condition.prob = c(0.5, 0.5),
-                                 eqtl.condition.specific = 0.5,
-                                 cde.facLoc = 1,
-                                 cde.facScale = 1,
-                                 dropout.type = "experiment",
-                                 dropout.shape = -1,
-                                 dropout.mid = 5) {
-  p <- splatter::newSplatPopParams(
-    eqtl.n = eqtl.n,
-    # Proportion of genes with genetic effects (eQTLs); 50% of genes affected
-    batchCells = batchCells,
-    # Number of cells per simulated batch/group (here 100)
-    similarity.scale = similarity.scale,
-    # How similar individuals/cells are; higher = more similar
-    condition.prob = condition.prob,
-    # Probability of assigning cells to each condition (50% Placebo,
-    # 50% Treatment)
-    eqtl.condition.specific = eqtl.condition.specific,
-    # Fraction of eQTLs that are condition-specific (50% only in one condition)
-    cde.facLoc = cde.facLoc,
-    # Location factor for condition-specific differential expression
-    # (average log2FC)
-    cde.facScale = cde.facScale
-    # Scale factor for variability of condition effects (log2FC variance)
-  )
-  # Set dropout type and parameters to simulate realistic zero-inflation
-  p <- splatter::setParam(p, "dropout.type", dropout.type)
-  # Dropout depends on gene expression like in real experiments
-  p <- splatter::setParam(p, "dropout.shape", dropout.shape)
-  # Shape of dropout curve; negative = more zeros in low-expression genes
-  p <- splatter::setParam(p, "dropout.mid", dropout.mid)
-  # Midpoint of dropout curve;
-  # expression ~5 (log-scale) has 50% dropout probability
-  p
-}
+# Simulation functions ----------------------------------------------------------
+## Fair rescueSim benchmark -----------------------------------------------------
 
-#### SplatPop data -------------------------------------------------------------
-simulate_splatpop <- function(n_samples = 20,
-                              n_snps = 1000,
-                              params = NULL,
-                              sparsify = TRUE) {
-  set.seed(42)
-  if (is.null(params)) params <- make_splatpop_params()
-  vcf <- splatter::mockVCF(n.snps = n_snps, n.samples = n_samples)
-  gff <- splatter::mockGFF()
-  sim <- splatter::splatPopSimulate(
-    vcf = vcf,
-    gff = gff,
-    params = params,
-    sparsify = sparsify # to make it more realisic, for dropout
-  )
-  sim <- scater::logNormCounts(sim)
-  sim <- scater::runPCA(sim, ncomponents = 10)
-  sim <- scater::runUMAP(sim, dimred = "PCA")
-  ## rename conditions for clarity
-  SummarizedExperiment::colData(sim)$Condition <- factor(
-    SummarizedExperiment::colData(sim)$Condition,
-    levels = c("Condition1", "Condition2"),
-    labels = c("Placebo", "Treatment")
-  )
-  ## extract ground truth
-  real_data <- SummarizedExperiment::rowData(sim)
+# ------------------------------------------------------------------------------
+# Fair rescueSim benchmark simulations
+#
+# Memory-safe version
+#
+# What this does:
+#   - creates 30 simulations per scenario and nSubjsPerGroup
+#   - saves each SingleCellExperiment as an individual .rds file
+#   - saves each ground truth table as an individual .rds file
+#   - pins only the small metadata/path tables
+#
+# Total simulations:
+#   5 scenarios * 3 n values * 30 seeds = 450 simulations
+#
+# IMPORTANT:
+#   This file does NOT create fair_rescue_simulations <- list()
+#   because that is what was causing the memory crash.
+# ------------------------------------------------------------------------------
 
-  cond1 <- real_data$ConditionDE.Condition1
-  cond2 <- real_data$ConditionDE.Condition2
+library(dplyr)
+library(tidyr)
+library(SummarizedExperiment)
+library(S4Vectors)
+library(scater)
+library(pins)
 
-  # Some SplatPop runs store these as numeric; others as characters
-  cond1 <- as.numeric(cond1)
-  cond2 <- as.numeric(cond2)
+# ------------------------------------------------------------------------------
+# Create fair rescueSim parameters
+# ------------------------------------------------------------------------------
 
-  true_logFC <- log2(cond2 / cond1)
+make_rescuesim_fair_params <- function(
+    RecAM_sce,
+    nTimepoints = 2,
+    twoGroupDesign = TRUE,
+    nSubjsPerGroup = 5,
+    prop_time = 0.50,
+    prop_trt = 0.20,
+    time_sd = 0.30,
+    trt_lfc_mean = 0.60,
+    trt_lfc_sd = 0.15,
+    seed = NULL
+) {
+  if (!is.null(seed)) set.seed(seed)
 
-  ground_truth <- data.frame(
-    gene = SummarizedExperiment::rownames(sim),
-    trueDE = true_logFC != 0,
-    true_logFC = true_logFC,
-    source = "splatPop"
-  )
-  simulation <- list(
-    sce = sim,
-    ground_truth = ground_truth,
-    simulation = "splatPop"
-  )
-
-  simulation
-}
-
-## TRT + time ------------------------------------------------------------------
-### rescueSim ------------------------------------------------------------------
-#### rescueSim params ----------------------------------------------------------
-make_rescuesim_params <- function(RecAM_sce,
-                                  nTimepoints = 2,
-                                  twoGroupDesign = TRUE,
-                                  nSubjsPerGroup = 5,
-                                  propDE = 0.20) {
   p <- rescueSim::RescueSimParams()
-  p <- rescueSim::estRescueSimParams(RecAM_sce,
-    sampleVariable = "sampleID",
-    subjectVariable = "subjectID",
-    timepointVariable = "time",
-    groupVariable = NULL,
-    nonDEGs = NULL,
-    cellParamsByCondition = FALSE
-  )
 
-  ## For the 2nd time point, simulate +/- 1 log2FC in 20% of genes
-  group0_log2FC <- sample(c(-1, 0, 1),
-    nrow(RecAM_sce),
-    replace = T,
-    prob = c(.1, .8, .1)
-  )
-  # For final time point, multiply log2FC by 3 to get +/- 3 log2FC in 20% of
-  # genes
-  group1_log2FC <- 3 * group0_log2FC
-  p@nTimepoints <- nTimepoints
-  p@twoGroupDesign <- twoGroupDesign
-  p@nSubjsPerGroup <- nSubjsPerGroup
-  p@propDE <- propDE
-  p@deLog2FC <- list(time1_group0 = group0_log2FC, time1_group1 = group1_log2FC)
-  p
-}
-
-# rescueSim norm lfc -----------------------------------------------------------
-make_rescuesim_norm_params <- function(RecAM_sce,
-                                       nTimepoints = 2,
-                                       twoGroupDesign = TRUE,
-                                       nSubjsPerGroup = 5,
-                                       prop_time = 0.50, # % genes with time effect (placebo + treatment)
-                                       prop_trt = 0.20, # % genes with EXTRA treatment effect
-                                       sd_time = 0.40, # size of placebo time drift
-                                       sd_trt = 0.80) {
-  p <- rescueSim::RescueSimParams()
   p <- rescueSim::estRescueSimParams(
     RecAM_sce,
     sampleVariable = "sampleID",
@@ -149,292 +59,494 @@ make_rescuesim_norm_params <- function(RecAM_sce,
 
   G <- nrow(RecAM_sce)
 
-  # ----- 1) shared TIME effect (moves placebo_EoT away from baseline) -----
-  n_time <- round(prop_time * G)
-  time_idx <- sample.int(G, n_time, replace = FALSE)
+  # --------------------------------------------------------------------------
+  # 1) Shared time effect
+  #
+  # This affects placebo and treatment equally.
+  # It should NOT be detected as treatment effect.
+  # --------------------------------------------------------------------------
 
   time_effect <- rep(0, G)
-  time_effect[time_idx] <- rnorm(n_time, mean = 0, sd = sd_time)
 
-  # ----- 2) EXTRA treatment effect (moves treatment_EoT further) -----
-  n_trt <- round(prop_trt * G)
-  trt_idx <- sample.int(G, n_trt, replace = FALSE)
+  if (prop_time > 0 && time_sd > 0) {
+    n_time <- round(prop_time * G)
+
+    time_idx <- sample.int(
+      n = G,
+      size = n_time,
+      replace = FALSE
+    )
+
+    time_effect[time_idx] <- rnorm(
+      n = n_time,
+      mean = 0,
+      sd = time_sd
+    )
+  }
+
+  # --------------------------------------------------------------------------
+  # 2) Extra treatment-by-time effect
+  #
+  # This is the true DE signal that methods should detect.
+  # --------------------------------------------------------------------------
 
   trt_extra <- rep(0, G)
-  trt_extra[trt_idx] <- rnorm(n_trt, mean = 0, sd = sd_trt)
 
-  # placebo vs baseline
+  if (prop_trt > 0 && trt_lfc_mean > 0) {
+    n_trt <- round(prop_trt * G)
+
+    trt_idx <- sample.int(
+      n = G,
+      size = n_trt,
+      replace = FALSE
+    )
+
+    trt_sign <- sample(
+      x = c(-1, 1),
+      size = n_trt,
+      replace = TRUE
+    )
+
+    trt_magnitude <- abs(rnorm(
+      n = n_trt,
+      mean = trt_lfc_mean,
+      sd = trt_lfc_sd
+    ))
+
+    trt_extra[trt_idx] <- trt_sign * trt_magnitude
+  }
+
+  # Placebo EoT - Placebo Baseline
   group0_log2FC <- time_effect
 
-  # treatment vs baseline = time + extra treatment
+  # Treatment EoT - Treatment Baseline
   group1_log2FC <- time_effect + trt_extra
-
 
   p@nTimepoints <- nTimepoints
   p@twoGroupDesign <- twoGroupDesign
   p@nSubjsPerGroup <- nSubjsPerGroup
+  p@propDE <- prop_trt
 
-  # RescueSim expects these names for the final timepoint effects by group
   p@deLog2FC <- list(
     time1_group0 = group0_log2FC,
     time1_group1 = group1_log2FC
   )
 
-  p@propDE <- prop_trt
-
   p
 }
 
+# ------------------------------------------------------------------------------
+# Simulate one fair rescueSim dataset
+# ------------------------------------------------------------------------------
 
-#### rescueSim data ------------------------------------------------------------
-simulate_rescue <- function(params) {
+simulate_rescue_fair <- function(
+    params,
+    scenario_name,
+    scenario,
+    nSubjsPerGroup,
+    seed,
+    compute_dimred = FALSE
+) {
+  if (!is.null(seed)) set.seed(seed)
+
   sim <- rescueSim::simRescueData(params)
-  sim <- scater::logNormCounts(sim)
-  sim <- scater::runPCA(sim, ncomponents = 10)
-  sim <- scater::runUMAP(sim, dimred = "PCA")
-  # harmonize colData
-  SummarizedExperiment::colData(sim)$Sample <- SummarizedExperiment::colData(
-    sim
-  )$SampleID
-  SummarizedExperiment::colData(sim)$group <- factor(
-    SummarizedExperiment::colData(sim)$group,
+
+  # For benchmarking methods, PCA/UMAP are not needed.
+  # Keeping this FALSE saves memory and disk space.
+  if (compute_dimred) {
+    sim <- scater::logNormCounts(sim)
+    sim <- scater::runPCA(sim, ncomponents = 10)
+    sim <- scater::runUMAP(sim, dimred = "PCA")
+  }
+
+  cd <- as.data.frame(SummarizedExperiment::colData(sim))
+
+  # rescueSim sometimes has both SampleID and sampleID depending on object version.
+  if ("SampleID" %in% colnames(cd)) {
+    cd$Sample <- cd$SampleID
+  } else if ("sampleID" %in% colnames(cd)) {
+    cd$Sample <- cd$sampleID
+  }
+
+  cd$group <- factor(
+    cd$group,
     levels = c("group0", "group1"),
     labels = c("Placebo", "Treatment")
   )
-  SummarizedExperiment::colData(sim)$time <- factor(
-    SummarizedExperiment::colData(sim)$time,
+
+  cd$time <- factor(
+    cd$time,
     levels = c("time0", "time1"),
     labels = c("Baseline", "EoT")
   )
-  cd <- SummarizedExperiment::colData(sim)
-  cd$group <- relevel(factor(cd$group), ref = "Placebo")
-  cd$time <- relevel(factor(cd$time), ref = "Baseline")
-  SummarizedExperiment::colData(sim) <- cd
-  SummarizedExperiment::colData(sim)$Condition <- paste0(
-    SummarizedExperiment::colData(sim)$group, "_",
-    SummarizedExperiment::colData(sim)$time
-  )
-  SummarizedExperiment::colData(sim)$sampleID <- factor(
-    SummarizedExperiment::colData(sim)$sampleID
-  )
-  SummarizedExperiment::colData(sim)$subjectID <- factor(
-    SummarizedExperiment::colData(sim)$subjectID
-  )
-  SummarizedExperiment::colData(sim)$CellID <- factor(
-    SummarizedExperiment::rownames(SummarizedExperiment::colData(sim))
-  )
 
-  # compute ground truth
+  cd$group <- stats::relevel(factor(cd$group), ref = "Placebo")
+  cd$time <- stats::relevel(factor(cd$time), ref = "Baseline")
+
+  cd$Condition <- paste0(cd$group, "_", cd$time)
+
+  cd$sampleID <- factor(cd$sampleID)
+  cd$subjectID <- factor(cd$subjectID)
+  cd$CellID <- factor(rownames(cd))
+
+  # Useful for the fixed paired design later
+  cd$time_num <- as.integer(cd$time == "EoT")
+  cd$treat_num <- as.integer(cd$group == "Treatment")
+  cd$trt_time <- cd$time_num * cd$treat_num
+
+  SummarizedExperiment::colData(sim) <- S4Vectors::DataFrame(cd)
+
+  # --------------------------------------------------------------------------
+  # Ground truth
+  # --------------------------------------------------------------------------
 
   g0 <- SummarizedExperiment::rowData(sim)$deLog2FC.time1_group0
   g1 <- SummarizedExperiment::rowData(sim)$deLog2FC.time1_group1
 
   true_logFC <- g1 - g0
 
+  tol <- 1e-12
+
   ground_truth <- data.frame(
     gene = rownames(sim),
     true_logFC = true_logFC,
-    trueDE = true_logFC != 0,
+    trueDE = abs(true_logFC) > tol,
     placebo_effect = g0,
     treatment_effect = g1,
-    simulation = "rescueSim"
+    scenario = scenario,
+    simulation = scenario_name,
+    nSubjsPerGroup = nSubjsPerGroup,
+    seed = seed,
+    effect_type = dplyr::case_when(
+      abs(true_logFC) > tol ~ "treatment_time",
+      abs(true_logFC) <= tol & abs(g0) > tol ~ "time_only",
+      TRUE ~ "null"
+    ),
+    direction = dplyr::case_when(
+      true_logFC > tol ~ "up",
+      true_logFC < -tol ~ "down",
+      TRUE ~ "none"
+    )
   )
 
-  simulation <- list(
+  list(
     sce = sim,
     ground_truth = ground_truth
   )
-
-  simulation
 }
 
+# ------------------------------------------------------------------------------
+# Benchmark grid
+# ------------------------------------------------------------------------------
 
-## Run simulations -------------------------------------------------------------
-## SplatPop --------------------------------------------------------------------
-set.seed(42)
-params <- make_splatpop_params()
-data <- simulate_splatpop(
-  n_samples = 20,
-  n_snps = 1000,
-  params = params
+n_sims_per_setting <- 30
+base_seed <- 202600
+
+fair_rescue_grid <- tidyr::crossing(
+  scenario = c(
+    "global_null",
+    "time_only_null",
+    "weak",
+    "medium",
+    "strong"
+  ),
+  nSubjsPerGroup = c(5, 10, 20),
+  seed = base_seed + seq_len(n_sims_per_setting)
+) |>
+  dplyr::mutate(
+    prop_time = dplyr::case_when(
+      scenario == "global_null" ~ 0.00,
+      TRUE ~ 0.50
+    ),
+
+    prop_trt = dplyr::case_when(
+      scenario %in% c("global_null", "time_only_null") ~ 0.00,
+      TRUE ~ 0.20
+    ),
+
+    time_sd = dplyr::case_when(
+      scenario == "global_null" ~ 0.00,
+      TRUE ~ 0.30
+    ),
+
+    trt_lfc_mean = dplyr::case_when(
+      scenario %in% c("global_null", "time_only_null") ~ 0.00,
+      scenario == "weak" ~ 0.30,
+      scenario == "medium" ~ 0.60,
+      scenario == "strong" ~ 1.00
+    ),
+
+    trt_lfc_sd = dplyr::case_when(
+      scenario %in% c("global_null", "time_only_null") ~ 0.00,
+      scenario == "weak" ~ 0.10,
+      scenario == "medium" ~ 0.15,
+      scenario == "strong" ~ 0.25
+    ),
+
+    sim_name = paste0(
+      "fair_",
+      scenario,
+      "_n",
+      nSubjsPerGroup,
+      "_seed",
+      seed
+    )
+  )
+
+# Check that the grid is correct
+print(
+  fair_rescue_grid |>
+    dplyr::count(scenario, nSubjsPerGroup)
 )
-splatpop_sim <- data$sce
-splatpop_ground_truth <- data$ground_truth
 
+print(nrow(fair_rescue_grid))
+# Should be 450
 
-set.seed(111)
-params_11 <- make_splatpop_params()
-data_11 <- simulate_splatpop(
-  n_samples = 20,
-  n_snps = 1000,
-  params = params_11
-)
-splatpop_sim_11 <- data_11$sce
-splatpop_ground_truth_11 <- data_11$ground_truth
-
-set.seed(222)
-params_22 <- make_splatpop_params()
-data_22 <- simulate_splatpop(
-  n_samples = 20,
-  n_snps = 1000,
-  params = params_22
-)
-splatpop_sim_22 <- data_22$sce
-splatpop_ground_truth_22 <- data_22$ground_truth
-
-set.seed(333)
-params_33 <- make_splatpop_params()
-data_33 <- simulate_splatpop(
-  n_samples = 20,
-  n_snps = 1000,
-  params = params_33
-)
-splatpop_sim_33 <- data_33$sce
-splatpop_ground_truth_33 <- data_33$ground_truth
-
-set.seed(444)
-params_44 <- make_splatpop_params()
-data_44 <- simulate_splatpop(
-  n_samples = 20,
-  n_snps = 1000,
-  params = params_11
-)
-splatpop_sim_44 <- data_44$sce
-splatpop_ground_truth_44 <- data_44$ground_truth
-
-## rescueSim -------------------------------------------------------------------
-data("RecAM_sce", package = "rescueSim")
-set.seed(42)
-params <- make_rescuesim_params(RecAM_sce, nSubjsPerGroup = 5)
-set.seed(42)
-data <- simulate_rescue(params)
-rescuesim_sim <- data$sce
-rescuesim_ground_truth <- data$ground_truth
-# seed 123
-data("RecAM_sce", package = "rescueSim")
-set.seed(123)
-params <- make_rescuesim_params(RecAM_sce, nSubjsPerGroup = 5)
-set.seed(123)
-data <- simulate_rescue(params)
-rescuesim_sim_2 <- data$sce
-rescuesim_ground_truth_2 <- data$ground_truth
-# seed 111
-data("RecAM_sce", package = "rescueSim")
-set.seed(111)
-params <- make_rescuesim_params(RecAM_sce, nSubjsPerGroup = 5)
-set.seed(111)
-data <- simulate_rescue(params)
-rescuesim_sim_3 <- data$sce
-rescuesim_ground_truth_3 <- data$ground_truth
-# seed 222
-data("RecAM_sce", package = "rescueSim")
-set.seed(222)
-params <- make_rescuesim_params(RecAM_sce, nSubjsPerGroup = 5)
-set.seed(222)
-data <- simulate_rescue(params)
-rescuesim_sim_4 <- data$sce
-rescuesim_ground_truth_4 <- data$ground_truth
-# seed 333
-data("RecAM_sce", package = "rescueSim")
-set.seed(333)
-params <- make_rescuesim_params(RecAM_sce, nSubjsPerGroup = 5)
-set.seed(333)
-data <- simulate_rescue(params)
-rescuesim_sim_5 <- data$sce
-rescuesim_ground_truth_5 <- data$ground_truth
-
-
-# rescuesim norm lfc -----------------------------------------------------------
+# ------------------------------------------------------------------------------
+# Run fair rescueSim simulations safely
+#
+# This is the key part.
+# It saves one simulation, removes it from memory, then continues.
+# ------------------------------------------------------------------------------
 
 data("RecAM_sce", package = "rescueSim")
-set.seed(42)
-params <- make_rescuesim_norm_params(RecAM_sce, nSubjsPerGroup = 5)
-set.seed(42)
-data <- simulate_rescue(params)
-rescuesim_sim_norm <- data$sce
-rescuesim_ground_truth_norm <- data$ground_truth
-# seed 123
-data("RecAM_sce", package = "rescueSim")
-set.seed(123)
-params <- make_rescuesim_norm_params(RecAM_sce, nSubjsPerGroup = 5)
-set.seed(123)
-data <- simulate_rescue(params)
-rescuesim_sim_2_norm <- data$sce
-rescuesim_ground_truth_2_norm <- data$ground_truth
-# seed 111
-data("RecAM_sce", package = "rescueSim")
-set.seed(111)
-params <- make_rescuesim_norm_params(RecAM_sce, nSubjsPerGroup = 5)
-set.seed(111)
-data <- simulate_rescue(params)
-rescuesim_sim_3_norm <- data$sce
-rescuesim_ground_truth_3_norm <- data$ground_truth
-# seed 222
-data("RecAM_sce", package = "rescueSim")
-set.seed(222)
-params <- make_rescuesim_norm_params(RecAM_sce, nSubjsPerGroup = 5)
-set.seed(222)
-data <- simulate_rescue(params)
-rescuesim_sim_4_norm <- data$sce
-rescuesim_ground_truth_4_norm <- data$ground_truth
-# seed 333
-data("RecAM_sce", package = "rescueSim")
-set.seed(333)
-params <- make_rescuesim_norm_params(RecAM_sce, nSubjsPerGroup = 5)
-set.seed(333)
-data <- simulate_rescue(params)
-rescuesim_sim_5_norm <- data$sce
-rescuesim_ground_truth_5_norm <- data$ground_truth
 
-# Pin simulations --------------------------------------------------------------
 board <- pins::board_local("nrgn-data")
-simulation <- c(
-  "splatpop" = splatpop_sim,
-  "splatpop_11" = splatpop_sim_11,
-  "splatpop_22" = splatpop_sim_22,
-  "splatpop_33" = splatpop_sim_33,
-  "splatpop_44" = splatpop_sim_44,
-  "rescueSim" = rescuesim_sim,
-  "rescueSim_123" = rescuesim_sim_2,
-  "rescueSim_111" = rescuesim_sim_3,
-  "rescueSim_222" = rescuesim_sim_4,
-  "rescueSim_333" = rescuesim_sim_5,
-  "rescueSim norm" = rescuesim_sim_norm,
-  "rescueSim_123 norm" = rescuesim_sim_2_norm,
-  "rescueSim_111 norm" = rescuesim_sim_3_norm,
-  "rescueSim_222 norm" = rescuesim_sim_4_norm,
-  "rescueSim_333 norm" = rescuesim_sim_5_norm
+
+base_dir <- "nrgn-data"
+
+sim_dir <- file.path(base_dir, "fair_rescue_simulation_files")
+truth_dir <- file.path(base_dir, "fair_rescue_ground_truth_files")
+
+dir.create(sim_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(truth_dir, recursive = TRUE, showWarnings = FALSE)
+
+fair_rescue_sim_paths <- list()
+
+# If FALSE, already-created files are skipped.
+# This lets you resume after a crash or after stopping the script.
+force_rerun <- FALSE
+
+for (i in seq_len(nrow(fair_rescue_grid))) {
+  row_i <- fair_rescue_grid[i, ]
+
+  sim_file <- file.path(
+    sim_dir,
+    paste0(row_i$sim_name, ".rds")
+  )
+
+  truth_file <- file.path(
+    truth_dir,
+    paste0(row_i$sim_name, "_truth.rds")
+  )
+
+  message(
+    "Running ",
+    i,
+    " / ",
+    nrow(fair_rescue_grid),
+    ": ",
+    row_i$sim_name
+  )
+
+  # --------------------------------------------------------------------------
+  # Skip if already saved
+  # --------------------------------------------------------------------------
+
+  if (!force_rerun && file.exists(sim_file) && file.exists(truth_file)) {
+    message("Files already exist. Skipping: ", row_i$sim_name)
+
+    fair_rescue_sim_paths[[row_i$sim_name]] <- data.frame(
+      simulation = row_i$sim_name,
+      file = sim_file,
+      ground_truth_file = truth_file,
+      scenario = row_i$scenario,
+      nSubjsPerGroup = row_i$nSubjsPerGroup,
+      seed = row_i$seed,
+      prop_time = row_i$prop_time,
+      prop_trt = row_i$prop_trt,
+      time_sd = row_i$time_sd,
+      trt_lfc_mean = row_i$trt_lfc_mean,
+      trt_lfc_sd = row_i$trt_lfc_sd,
+      stringsAsFactors = FALSE
+    )
+
+    next
+  }
+
+  # --------------------------------------------------------------------------
+  # Simulate
+  # --------------------------------------------------------------------------
+
+  params_i <- make_rescuesim_fair_params(
+    RecAM_sce = RecAM_sce,
+    nSubjsPerGroup = row_i$nSubjsPerGroup,
+    prop_time = row_i$prop_time,
+    prop_trt = row_i$prop_trt,
+    time_sd = row_i$time_sd,
+    trt_lfc_mean = row_i$trt_lfc_mean,
+    trt_lfc_sd = row_i$trt_lfc_sd,
+    seed = row_i$seed
+  )
+
+  sim_i <- simulate_rescue_fair(
+    params = params_i,
+    scenario_name = row_i$sim_name,
+    scenario = row_i$scenario,
+    nSubjsPerGroup = row_i$nSubjsPerGroup,
+    seed = row_i$seed,
+    compute_dimred = FALSE
+  )
+
+  # --------------------------------------------------------------------------
+  # Save to disk immediately
+  # --------------------------------------------------------------------------
+
+  saveRDS(
+    sim_i$sce,
+    file = sim_file,
+    compress = "gzip"
+  )
+
+  saveRDS(
+    sim_i$ground_truth,
+    file = truth_file,
+    compress = "gzip"
+  )
+
+  # --------------------------------------------------------------------------
+  # Store only paths and metadata in memory
+  # --------------------------------------------------------------------------
+
+  fair_rescue_sim_paths[[row_i$sim_name]] <- data.frame(
+    simulation = row_i$sim_name,
+    file = sim_file,
+    ground_truth_file = truth_file,
+    scenario = row_i$scenario,
+    nSubjsPerGroup = row_i$nSubjsPerGroup,
+    seed = row_i$seed,
+    prop_time = row_i$prop_time,
+    prop_trt = row_i$prop_trt,
+    time_sd = row_i$time_sd,
+    trt_lfc_mean = row_i$trt_lfc_mean,
+    trt_lfc_sd = row_i$trt_lfc_sd,
+    stringsAsFactors = FALSE
+  )
+
+  # Remove heavy objects
+  rm(params_i, sim_i)
+  gc()
+}
+
+fair_rescue_sim_paths <- dplyr::bind_rows(fair_rescue_sim_paths)
+
+# ------------------------------------------------------------------------------
+# Ground truth summary
+#
+# This reads one ground truth file at a time.
+# It does not load all SCEs.
+# ------------------------------------------------------------------------------
+
+fair_truth_summary <- dplyr::bind_rows(
+  lapply(seq_len(nrow(fair_rescue_sim_paths)), function(i) {
+    truth_i <- readRDS(fair_rescue_sim_paths$ground_truth_file[i])
+
+    out <- truth_i |>
+      dplyr::summarise(
+        simulation = unique(simulation),
+        scenario = unique(scenario),
+        nSubjsPerGroup = unique(nSubjsPerGroup),
+        seed = unique(seed),
+        n_genes = dplyr::n(),
+        n_true_de = sum(trueDE),
+        prop_true_de = mean(trueDE),
+        n_treatment_time = sum(effect_type == "treatment_time"),
+        n_time_only = sum(effect_type == "time_only"),
+        n_null = sum(effect_type == "null"),
+        median_abs_true_lfc = median(abs(true_logFC), na.rm = TRUE),
+        max_abs_true_lfc = max(abs(true_logFC), na.rm = TRUE),
+        .groups = "drop"
+      )
+
+    rm(truth_i)
+    gc()
+
+    out
+  })
 )
 
-ground_truth <- list(
-  "splatpop" = splatpop_ground_truth,
-  "splatpop_11" = splatpop_ground_truth_11,
-  "splatpop_22" = splatpop_ground_truth_22,
-  "splatpop_33" = splatpop_ground_truth_33,
-  "splatpop_44" = splatpop_ground_truth_44,
-  "rescueSim" = rescuesim_ground_truth,
-  "rescueSim_123" = rescuesim_ground_truth_2,
-  "rescueSim_111" = rescuesim_ground_truth_3,
-  "rescueSim_222" = rescuesim_ground_truth_4,
-  "rescueSim_333" = rescuesim_ground_truth_5,
-  "rescueSim norm" = rescuesim_ground_truth_norm,
-  "rescueSim_123 norm" = rescuesim_ground_truth_2_norm,
-  "rescueSim_111 norm" = rescuesim_ground_truth_3_norm,
-  "rescueSim_222 norm" = rescuesim_ground_truth_4_norm,
-  "rescueSim_333 norm" = rescuesim_ground_truth_5_norm
+print(
+  fair_truth_summary |>
+    dplyr::arrange(scenario, nSubjsPerGroup, seed)
 )
 
+# Check: should be 30 for every scenario and n
+print(
+  fair_truth_summary |>
+    dplyr::count(scenario, nSubjsPerGroup)
+)
 
-pins::pin_write(simulation,
-  name = "simulations_final",
+# ------------------------------------------------------------------------------
+# Save fair benchmark metadata
+#
+# Important:
+#   We pin paths, not the full list of SingleCellExperiment objects.
+# ------------------------------------------------------------------------------
+
+pins::pin_write(
+  fair_rescue_sim_paths,
+  name = "fair_rescue_sim_paths",
   type = "rds",
   board = board,
-  versioned = FALSE
+  versioned = TRUE
 )
 
-pins::pin_write(ground_truth,
-  name = "ground_truth_final",
+pins::pin_write(
+  fair_rescue_grid,
+  name = "fair_rescue_grid",
   type = "rds",
   board = board,
-  versioned = FALSE
+  versioned = TRUE
 )
+
+pins::pin_write(
+  fair_truth_summary,
+  name = "fair_rescue_truth_summary",
+  type = "rds",
+  board = board,
+  versioned = TRUE
+)
+
+# ------------------------------------------------------------------------------
+# Optional helper: read one simulation later
+# ------------------------------------------------------------------------------
+
+read_fair_simulation <- function(simulation_name, board = pins::board_local("nrgn-data")) {
+  paths <- pins::pin_read(board, "fair_rescue_sim_paths")
+
+  row_i <- paths |>
+    dplyr::filter(simulation == simulation_name)
+
+  if (nrow(row_i) != 1) {
+    stop("Could not find exactly one simulation called: ", simulation_name)
+  }
+
+  readRDS(row_i$file)
+}
+
+read_fair_ground_truth <- function(simulation_name, board = pins::board_local("nrgn-data")) {
+  paths <- pins::pin_read(board, "fair_rescue_sim_paths")
+
+  row_i <- paths |>
+    dplyr::filter(simulation == simulation_name)
+
+  if (nrow(row_i) != 1) {
+    stop("Could not find exactly one simulation called: ", simulation_name)
+  }
+
+  readRDS(row_i$ground_truth_file)
+}
+
+# ------------------------------------------------------------------------------
+# End
+# ------------------------------------------------------------------------------

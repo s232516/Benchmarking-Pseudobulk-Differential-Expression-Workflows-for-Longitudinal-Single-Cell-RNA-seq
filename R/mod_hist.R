@@ -171,7 +171,10 @@ mod_hist_logfc_server <- function(input, output, session, data) {
         ggplot2::theme_bw(base_size = 16) +
         ggplot2::theme(
           aspect.ratio = 1,
-          text = ggplot2::element_text(size = 18)
+          axis.title.x = ggplot2::element_text(size = 30),
+          axis.title.y = ggplot2::element_text(size = 30),
+          axis.text.x  = ggplot2::element_text(size = 20),
+          axis.text.y  = ggplot2::element_text(size = 20)
         )
     })
 
@@ -209,11 +212,15 @@ mod_hist_logfc_server <- function(input, output, session, data) {
             y = "Count",
             fill = "True DE"
           ) +
-          ggplot2::scale_x_continuous(breaks = scales::breaks_pretty(n = 10)) +
+          ggplot2::scale_x_continuous(breaks = scales::breaks_pretty(n = 6)) +
           ggplot2::theme_bw(base_size = 16) +
           ggplot2::theme(
             aspect.ratio = 1,
-            text = ggplot2::element_text(size = 18)
+            text = ggplot2::element_text(size = 18),
+            axis.title.x = ggplot2::element_text(size = 30),
+            axis.title.y = ggplot2::element_text(size = 30),
+            axis.text.x  = ggplot2::element_text(size = 20),
+            axis.text.y  = ggplot2::element_text(size = 20)
           )
 
         ggplot2::ggsave(file, plot = plot1, width = 8, height = 6, dpi = 300)

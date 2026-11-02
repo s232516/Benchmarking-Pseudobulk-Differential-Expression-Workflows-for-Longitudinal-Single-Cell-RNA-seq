@@ -178,17 +178,19 @@ p_lib_hist_splat <- ggplot2::ggplot(
     bins  = 40
   ) +
   ggplot2::labs(
-    title = "Histogram of UMIs per cell",
     x = "UMIs/cell",
     y = "Count"
   ) +
   ggplot2::scale_x_continuous(
-    breaks = scales::breaks_pretty(n = 10)
+    breaks = scales::breaks_pretty(n = 6)
   ) +
   ggplot2::theme_bw(base_size = 16) +
   ggplot2::theme(
     aspect.ratio = 1,
-    text = ggplot2::element_text(size = 18)
+    axis.title.x = ggplot2::element_text(size = 40),
+    axis.title.y = ggplot2::element_text(size = 40),
+    axis.text.x  = ggplot2::element_text(size = 20),
+    axis.text.y  = ggplot2::element_text(size = 20)
   )
 
 # Detected genes vs UMIs
@@ -202,17 +204,19 @@ p_detect_vs_umi_splat <- ggplot2::ggplot(
     alpha = 0.7
   ) +
   ggplot2::labs(
-    title = "Detected genes vs UMIs",
     x = "UMIs/cell",
     y = "Detected genes"
   ) +
   ggplot2::scale_x_continuous(
-    breaks = scales::breaks_pretty(n = 10)
+    breaks = scales::breaks_pretty(n = 6)
   ) +
   ggplot2::theme_bw(base_size = 16) +
   ggplot2::theme(
     aspect.ratio = 1,
-    text = ggplot2::element_text(size = 18)
+    axis.title.x = ggplot2::element_text(size = 40),
+    axis.title.y = ggplot2::element_text(size = 40),
+    axis.text.x  = ggplot2::element_text(size = 20),
+    axis.text.y  = ggplot2::element_text(size = 20)
   )
 
 # Mean–variance (log-log)
@@ -228,14 +232,16 @@ p_mean_var_splat <- ggplot2::ggplot(
   ggplot2::scale_x_log10(breaks = scales::breaks_log(n = 6)) +
   ggplot2::scale_y_log10(breaks = scales::breaks_log(n = 6)) +
   ggplot2::labs(
-    title = "Mean–variance trend",
     x = "Gene mean",
     y = "Gene variance"
   ) +
   ggplot2::theme_bw(base_size = 16) +
   ggplot2::theme(
     aspect.ratio = 1,
-    text = ggplot2::element_text(size = 18)
+    axis.title.x = ggplot2::element_text(size = 40),
+    axis.title.y = ggplot2::element_text(size = 40),
+    axis.text.x  = ggplot2::element_text(size = 20),
+    axis.text.y  = ggplot2::element_text(size = 20)
   )
 
 # Zeros vs mean (log-x)
@@ -250,14 +256,16 @@ p_zero_vs_mean_splat <- ggplot2::ggplot(
   ) +
   ggplot2::scale_x_log10(breaks = scales::breaks_log(n = 6)) +
   ggplot2::labs(
-    title = "Zero fraction vs mean",
     x = "Gene mean",
     y = "Zero fraction"
   ) +
   ggplot2::theme_bw(base_size = 16) +
   ggplot2::theme(
     aspect.ratio = 1,
-    text = ggplot2::element_text(size = 18)
+    axis.title.x = ggplot2::element_text(size = 40),
+    axis.title.y = ggplot2::element_text(size = 40),
+    axis.text.x  = ggplot2::element_text(size = 20),
+    axis.text.y  = ggplot2::element_text(size = 20)
   )
 
 
@@ -281,17 +289,19 @@ p_lib_hist <- ggplot2::ggplot(
     bins  = 40
   ) +
   ggplot2::labs(
-    title = "Histogram of UMIs per cell",
     x = "UMIs/cell",
     y = "Count"
   ) +
   ggplot2::scale_x_continuous(
-    breaks = scales::breaks_pretty(n = 10)
+    breaks = scales::breaks_pretty(n = 6)
   ) +
   ggplot2::theme_bw(base_size = 16) +
   ggplot2::theme(
     aspect.ratio = 1,
-    text = ggplot2::element_text(size = 18)
+    axis.title.x = ggplot2::element_text(size = 40),
+    axis.title.y = ggplot2::element_text(size = 40),
+    axis.text.x  = ggplot2::element_text(size = 20),
+    axis.text.y  = ggplot2::element_text(size = 20)
   )
 
 # Detected genes vs UMIs
@@ -305,17 +315,19 @@ p_detect_vs_umi <- ggplot2::ggplot(
     alpha = 0.7
   ) +
   ggplot2::labs(
-    title = "Detected genes vs UMIs",
     x = "UMIs/cell",
     y = "Detected genes"
   ) +
   ggplot2::scale_x_continuous(
-    breaks = scales::breaks_pretty(n = 10)
+    breaks = scales::breaks_pretty(n = 6)
   ) +
   ggplot2::theme_bw(base_size = 16) +
   ggplot2::theme(
     aspect.ratio = 1,
-    text = ggplot2::element_text(size = 18)
+    axis.title.x = ggplot2::element_text(size = 40),
+    axis.title.y = ggplot2::element_text(size = 40),
+    axis.text.x  = ggplot2::element_text(size = 20),
+    axis.text.y  = ggplot2::element_text(size = 20)
   )
 
 # Mean–variance (log-log)
@@ -331,14 +343,16 @@ p_mean_var <- ggplot2::ggplot(
   ggplot2::scale_x_log10(breaks = scales::breaks_log(n = 6)) +
   ggplot2::scale_y_log10(breaks = scales::breaks_log(n = 6)) +
   ggplot2::labs(
-    title = "Mean–variance trend",
     x = "Gene mean",
     y = "Gene variance"
   ) +
   ggplot2::theme_bw(base_size = 16) +
   ggplot2::theme(
     aspect.ratio = 1,
-    text = ggplot2::element_text(size = 18)
+    axis.title.x = ggplot2::element_text(size = 40),
+    axis.title.y = ggplot2::element_text(size = 40),
+    axis.text.x  = ggplot2::element_text(size = 20),
+    axis.text.y  = ggplot2::element_text(size = 20)
   )
 
 # Zeros vs mean (log-x)
@@ -353,14 +367,16 @@ p_zero_vs_mean <- ggplot2::ggplot(
   ) +
   ggplot2::scale_x_log10(breaks = scales::breaks_log(n = 6)) +
   ggplot2::labs(
-    title = "Zero fraction vs mean",
     x = "Gene mean",
     y = "Zero fraction"
   ) +
   ggplot2::theme_bw(base_size = 16) +
   ggplot2::theme(
     aspect.ratio = 1,
-    text = ggplot2::element_text(size = 18)
+    axis.title.x = ggplot2::element_text(size = 40),
+    axis.title.y = ggplot2::element_text(size = 40),
+    axis.text.x  = ggplot2::element_text(size = 20),
+    axis.text.y  = ggplot2::element_text(size = 20)
   )
 
 
@@ -386,17 +402,19 @@ p_lib_hist_norm <- ggplot2::ggplot(
     bins  = 40
   ) +
   ggplot2::labs(
-    title = "Histogram of UMIs per cell",
     x = "UMIs/cell",
     y = "Count"
   ) +
   ggplot2::scale_x_continuous(
-    breaks = scales::breaks_pretty(n = 10)
+    breaks = scales::breaks_pretty(n = 6)
   ) +
   ggplot2::theme_bw(base_size = 16) +
   ggplot2::theme(
     aspect.ratio = 1,
-    text = ggplot2::element_text(size = 18)
+    axis.title.x = ggplot2::element_text(size = 40),
+    axis.title.y = ggplot2::element_text(size = 40),
+    axis.text.x  = ggplot2::element_text(size = 20),
+    axis.text.y  = ggplot2::element_text(size = 20)
   )
 
 # Detected genes vs UMIs
@@ -410,17 +428,19 @@ p_detect_vs_umi_norm <- ggplot2::ggplot(
     alpha = 0.7
   ) +
   ggplot2::labs(
-    title = "Detected genes vs UMIs",
     x = "UMIs/cell",
     y = "Detected genes"
   ) +
   ggplot2::scale_x_continuous(
-    breaks = scales::breaks_pretty(n = 10)
+    breaks = scales::breaks_pretty(n = 6)
   ) +
   ggplot2::theme_bw(base_size = 16) +
   ggplot2::theme(
     aspect.ratio = 1,
-    text = ggplot2::element_text(size = 18)
+    axis.title.x = ggplot2::element_text(size = 40),
+    axis.title.y = ggplot2::element_text(size = 40),
+    axis.text.x  = ggplot2::element_text(size = 20),
+    axis.text.y  = ggplot2::element_text(size = 20)
   )
 
 # Mean–variance (log-log)
@@ -436,14 +456,16 @@ p_mean_var_norm <- ggplot2::ggplot(
   ggplot2::scale_x_log10(breaks = scales::breaks_log(n = 6)) +
   ggplot2::scale_y_log10(breaks = scales::breaks_log(n = 6)) +
   ggplot2::labs(
-    title = "Mean–variance trend",
     x = "Gene mean",
     y = "Gene variance"
   ) +
   ggplot2::theme_bw(base_size = 16) +
   ggplot2::theme(
     aspect.ratio = 1,
-    text = ggplot2::element_text(size = 18)
+    axis.title.x = ggplot2::element_text(size = 40),
+    axis.title.y = ggplot2::element_text(size = 40),
+    axis.text.x  = ggplot2::element_text(size = 20),
+    axis.text.y  = ggplot2::element_text(size = 20)
   )
 
 # Zeros vs mean (log-x)
@@ -458,14 +480,16 @@ p_zero_vs_mean_norm <- ggplot2::ggplot(
   ) +
   ggplot2::scale_x_log10(breaks = scales::breaks_log(n = 6)) +
   ggplot2::labs(
-    title = "Zero fraction vs mean",
     x = "Gene mean",
     y = "Zero fraction"
   ) +
   ggplot2::theme_bw(base_size = 16) +
   ggplot2::theme(
     aspect.ratio = 1,
-    text = ggplot2::element_text(size = 18)
+    axis.title.x = ggplot2::element_text(size = 40),
+    axis.title.y = ggplot2::element_text(size = 40),
+    axis.text.x  = ggplot2::element_text(size = 20),
+    axis.text.y  = ggplot2::element_text(size = 20)
   )
 
 

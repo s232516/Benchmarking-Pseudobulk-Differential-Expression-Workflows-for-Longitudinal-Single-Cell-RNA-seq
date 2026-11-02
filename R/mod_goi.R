@@ -218,7 +218,52 @@ mod_goi_server <- function(input, output, session, sce_list) {
         paste0("GOI_", input$gene, "_", input$analysis, ".png")
       },
       content = function(file) {
-        p <- output$goi_plot()  # uses the same plot
+        df<- goi_summary()
+        # prevent evalmod from running on empty data
+        validate(
+          need(!is.null(df) && nrow(df) > 0,
+               "Loading...")
+        )
+        df <- goi_summary()
+        validate(need(nrow(df) > 0, "No data available for this gene."))
+        pastel_cols <- c(
+          "Treatment" = "#FFB3BA",
+          "Placebo"   = "#BAE1FF"
+        )
+
+
+        p <- ggplot2::ggplot(
+          df,
+          ggplot2::aes(
+            x     = time,
+            y     = mean_expr,
+            group = group,
+            color = group,
+            fill  = group
+          )
+        ) +
+          # error bars for CIs
+          ggplot2::geom_errorbar(
+            ggplot2::aes(x = time, ymin = ci_low, ymax = ci_high),
+            width    = 0.2,
+            linewidth = 1.2
+          ) +
+          ggplot2::geom_line(size = 1.2) +
+          ggplot2::geom_point(size = 3) +
+          ggplot2::labs(
+            title = paste("Trajectory for", input$gene, "in", input$analysis),
+            x     = "Timepoint",
+            y     = "Mean log-expression",
+            color = "Treatment",
+            fill  = "Treatment"
+          ) +
+          ggplot2::scale_fill_manual(values = pastel_cols) +
+          ggplot2::theme_bw(base_size = 16) +
+          ggplot2::theme(
+            axis.text.x     = ggplot2::element_text(angle = 30, hjust = 1),
+            legend.position = "right",
+            aspect.ratio    = 1
+          )
         ggplot2::ggsave(file, p, width = 8, height = 6)
       }
     )
