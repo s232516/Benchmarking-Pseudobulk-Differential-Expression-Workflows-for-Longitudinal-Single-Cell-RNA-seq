@@ -48,7 +48,6 @@ The final two rows describe **parameters of variability-factor distributions**, 
 - `R/` — app modules, plotting, and server logic
 - `data/` — package data
 - `dev/` — development scripts
-- `tests/` — tests
 
 After installing the R dependencies declared in `DESCRIPTION`, launch from the project root:
 
